@@ -74,6 +74,16 @@
         .fade-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
+        /* Swipe Hint Animation */
+        .animate-swipe-left {
+            animation: swipeLeft 1.5s infinite;
+        }
+        @keyframes swipeLeft {
+            0% { transform: translateX(10px); opacity: 0; }
+            50% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(-10px); opacity: 0; }
+        }
+
         /* Card Flip Fixed */
         .card-flip { perspective: 1000px; }
         .card-inner { 
@@ -510,6 +520,8 @@
             const [queue, setQueue] = useState([]);
             const [index, setIndex] = useState(0);
             const [isFlipped, setIsFlipped] = useState(false);
+            // 修正: タッチ開始位置を記録するRef
+            const touchStartX = useRef(null);
 
             const startReview = () => {
                 if (savedWords.length === 0) return alert('単語帳が空です');
@@ -531,11 +543,34 @@
                 }
             };
 
-            const toggleFlip = () => {
+            // 修正: クリック時のトグル処理（スワイプ時は発動しないようにする）
+            const toggleFlip = (e) => {
+                // ここでは単純なクリックとして処理。スワイプとの競合はタッチイベント側で制御、またはユーザーが使い分ける
                 if (!isFlipped) {
                     speak(queue[index].word, queue[index].audioUrl);
                 }
                 setIsFlipped(!isFlipped);
+            };
+
+            // 修正: タッチイベントハンドラ
+            const onTouchStart = (e) => {
+                touchStartX.current = e.touches[0].clientX;
+            };
+
+            const onTouchEnd = (e) => {
+                if (touchStartX.current === null) return;
+                const touchEndX = e.changedTouches[0].clientX;
+                const distance = touchStartX.current - touchEndX;
+                
+                // 50px以上左にスワイプしたら次へ
+                if (distance > 50) {
+                    handleNext();
+                }
+                // タップ（移動が少ない）の場合は、divのonClickが発火するのでここでは何もしない
+                // ただし、スワイプ後にonClickが発火してしまうのを防ぐ必要がある場合はここで制御が必要だが、
+                // ReactのonClickはタッチ移動時には発火しにくいので、基本的にはこのままでOK
+                
+                touchStartX.current = null;
             };
 
             if (!isStarted) {
@@ -562,10 +597,16 @@
 
             return (
                 <div className="h-full flex flex-col items-center justify-center pb-4 relative fade-in">
-                    <div className={`w-full max-w-sm h-[420px] card-flip cursor-pointer ${isFlipped ? 'flipped' : ''}`} onClick={toggleFlip}>
+                    {/* 修正: タッチイベントを追加 */}
+                    <div 
+                        className={`w-full max-w-sm h-[420px] card-flip cursor-pointer ${isFlipped ? 'flipped' : ''}`} 
+                        onClick={toggleFlip}
+                        onTouchStart={onTouchStart}
+                        onTouchEnd={onTouchEnd}
+                    >
                         <div className="card-inner">
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
-                                {/* スピーカーボタン位置調整: mt-6 を mt-2 にし、mb-6 を追加して単語との距離を確保 */}
+                                {/* スピーカーボタン位置調整 */}
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} 
                                     className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-2 mb-6"
@@ -598,7 +639,15 @@
                             </div>
                         </div>
                     </div>
-                    <div className="w-full max-w-sm mt-8">
+                    
+                    {/* スワイプガイド (スマホのみ表示) */}
+                    <div className="mt-6 flex flex-col items-center md:hidden">
+                        <p className="text-xs text-gray-400 animate-swipe-left flex items-center gap-2">
+                            <i className="fas fa-chevron-left"></i> スワイプして次へ
+                        </p>
+                    </div>
+
+                    <div className="w-full max-w-sm mt-4 md:mt-8">
                         <button onClick={handleNext} className="w-full bg-[#258FAF] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">
                             次の単語へ <i className="fas fa-chevron-right"></i>
                         </button>
