@@ -3,7 +3,14 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Wordloop - シンプルな単語帳</title>
+    <title>Wordloop - シンプルな英単語帳</title>
+    
+    <!-- Icon & OGP Settings -->
+    <link rel="apple-touch-icon" href="wordloop-icon.svg">
+    <link rel="icon" type="image/svg+xml" href="wordloop-icon.svg">
+    <meta property="og:title" content="Wordloop">
+    <meta property="og:description" content="シンプルな英単語帳アプリ">
+    <meta property="og:image" content="wordloop-ogp.svg">
     
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -171,33 +178,23 @@
             }).filter((x, i, self) => self.indexOf(x) === i).join('・');
         };
 
-        // Jisho.org API
-        const fetchJishoData = async (term) => {
-            try {
-                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
-                if (!res.ok) return null;
-                return await res.json();
-            } catch (e) {
-                console.warn("Jisho API Error:", e);
-                return null;
-            }
-        };
+        // --- API Functions ---
 
-        // Free Dictionary API
-        const fetchFreeDictData = async (term) => {
-            try {
-                const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`);
-                if (!res.ok) return null;
-                return await res.json();
-            } catch (e) {
-                console.warn("FreeDict API Error:", e);
-                return null;
-            }
-        };
-
-        // MyMemory Translation API (Wrapper)
+        // 1. Translation (Fastest: Lingva -> MyMemory)
         const fetchTranslation = async (term, langPair) => {
-             try {
+            const [source, target] = langPair.split('|');
+            
+            // Primary: Lingva Translate
+            try {
+                const res = await fetch(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(term)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    return data.translation;
+                }
+            } catch (e) { /* continue */ }
+
+            // Fallback: MyMemory
+            try {
                 const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(term)}&langpair=${langPair}`);
                 const data = await res.json();
                 let translated = data.responseData.translatedText;
@@ -206,179 +203,183 @@
                 }
                 return translated;
             } catch (e) {
-                console.warn("Translation failed", e);
                 return null; 
             }
         };
 
-        // メイン検索関数
-        const fetchDictionaryData = async (term) => {
+        // 2. Dictionary APIs
+        const fetchJishoData = async (term) => {
             try {
-                let searchWord = term;
-                let isJpSearch = isJapanese(term);
-                let tips = "公開辞書/翻訳データを使用";
-                let primaryTrans = "";
-                let meanings = [];
-                let pronunciation = "";
-                let synonyms = [];
-                let audioUrl = ""; 
+                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) { return null; }
+        };
 
-                // --- 1. 日本語入力の場合: Jisho.org を優先 ---
-                if (isJpSearch) {
-                    let jishoFound = false;
-                    try {
-                        const jishoData = await fetchJishoData(term);
-                        
-                        if (jishoData && jishoData.data && jishoData.data.length > 0) {
-                            const entry = jishoData.data[0];
-                            
-                            if(entry.senses[0].english_definitions.length > 0) {
-                                searchWord = entry.senses[0].english_definitions[0];
-                                jishoFound = true;
-                                tips = "Jisho.org (日英辞書) 経由";
-                            }
-                            
-                            pronunciation = entry.japanese[0].reading || ""; 
-                            
-                            entry.senses.slice(0, 3).forEach(sense => {
-                                const posRaw = sense.parts_of_speech.join(', ') || 'Common';
-                                const defs = sense.english_definitions.join('; ');
-                                
-                                meanings.push({
-                                    partOfSpeech: posRaw,
-                                    definitions: [{
-                                        ja: defs,
-                                        en: "",
-                                        exEn: "",
-                                        exJa: ""
-                                    }]
-                                });
-                            });
+        const fetchFreeDictData = async (term) => {
+            try {
+                const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`);
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) { return null; }
+        };
 
-                            // FreeDictで補完 (音声・例文)
-                            try {
-                                const dictData = await fetchFreeDictData(searchWord);
-                                if (dictData && dictData.length > 0) {
-                                    const freeEntry = dictData[0];
-                                    
-                                    const p = freeEntry.phonetics.find(p => p.audio && p.audio !== "");
-                                    if (p) audioUrl = p.audio;
+        // --- Data Fetching Strategies ---
 
-                                    for(const m of freeEntry.meanings) {
-                                        const defWithEx = m.definitions.find(d => d.example);
-                                        if(defWithEx && meanings.length > 0) {
-                                            meanings[0].definitions[0].exEn = defWithEx.example;
-                                            meanings[0].definitions[0].exJa = await translateText(defWithEx.example, "en|ja");
-                                            break; 
-                                        }
-                                    }
-                                }
-                            } catch(e) {}
-                        }
-                    } catch (e) {
-                        console.warn("Jisho lookup failed", e);
-                    }
+        // Strategy A: 速報 (Translation Only)
+        const fetchQuickData = async (term) => {
+            const isJp = isJapanese(term);
+            const langPair = isJp ? "ja|en" : "en|ja";
+            
+            const trans = await fetchTranslation(term, langPair);
+            
+            if (!trans) throw new Error("Translation failed");
 
-                    if (!jishoFound) {
-                        searchWord = await translateText(term, "ja|en");
-                        tips = "翻訳ソフトを使用";
-                    }
-                    
-                    primaryTrans = term;
+            return {
+                word: isJp ? trans : term,
+                translation: isJp ? term : trans,
+                meanings: [{
+                    partOfSpeech: "Translation",
+                    definitions: [{ ja: isJp ? term : trans, en: "", exEn: "", exJa: "" }]
+                }],
+                pronunciation: "",
+                synonyms: [],
+                audioUrl: "",
+                definition: isJp ? term : trans,
+                example: "",
+                tips: "検索中... (詳細データを取得中)"
+            };
+        };
 
-                } else {
-                    // --- 2. 英語入力の場合 ---
-                    const [transText, freeDictData] = await Promise.all([
-                        fetchTranslation(term, "en|ja"),
-                        fetchFreeDictData(term)
-                    ]);
+        // Strategy B: 確報 (Dictionary Full Search)
+        const fetchRichData = async (term) => {
+            let searchWord = term;
+            let isJpSearch = isJapanese(term);
+            let tips = "公開辞書/翻訳データを使用";
+            let primaryTrans = "";
+            let meanings = [];
+            let pronunciation = "";
+            let synonyms = [];
+            let audioUrl = ""; 
+            let jishoFound = false;
 
-                    if (transText) primaryTrans = transText;
-
-                    if (freeDictData && freeDictData.length > 0) {
-                        const entry = freeDictData[0];
-                        
-                        pronunciation = entry.phonetic || (entry.phonetics.find(p => p.text) ? entry.phonetics.find(p => p.text).text : "");
-                        
-                        const phoneticsWithAudio = entry.phonetics.find(p => p.audio && p.audio !== "");
-                        if (phoneticsWithAudio) {
-                            audioUrl = phoneticsWithAudio.audio;
-                        }
-
-                        synonyms = entry.meanings.flatMap(m => m.synonyms).slice(0,5);
-                        
-                        const meaningsPromises = entry.meanings.slice(0,3).map(async (m) => {
-                            const defPromises = m.definitions.slice(0, 3).map(async (defObj) => {
-                                const [defJa, exJa] = await Promise.all([
-                                    translateText(defObj.definition, "en|ja"),
-                                    defObj.example ? translateText(defObj.example, "en|ja") : ""
-                                ]);
-                                return {
-                                    ja: defJa,
-                                    en: defObj.definition,
-                                    exEn: defObj.example || "",
-                                    exJa: exJa
-                                };
-                            });
-                            
-                            const definitions = await Promise.all(defPromises);
-                            return { partOfSpeech: m.partOfSpeech, definitions: definitions };
-                        });
-                        
-                        meanings = await Promise.all(meaningsPromises);
-                    }
-                }
-
-                // --- 3. 最終チェックとフォールバック ---
-                if (meanings.length === 0) {
-                    let fallbackTrans = "";
-                    let fallbackWord = "";
+            // 1. Jisho.org
+            try {
+                const jishoData = await fetchJishoData(term);
+                if (jishoData && jishoData.data && jishoData.data.length > 0) {
+                    jishoFound = true;
+                    tips = "Jisho.org (日英/英日辞書) 経由";
                     
                     if (isJpSearch) {
-                         if (!searchWord || searchWord === term) {
-                             searchWord = await fetchTranslation(term, "ja|en");
-                         }
-                         fallbackWord = searchWord;
-                         fallbackTrans = term;
-                    } else {
-                         if (!primaryTrans) {
-                             primaryTrans = await fetchTranslation(term, "en|ja");
-                         }
-                         fallbackWord = term;
-                         fallbackTrans = primaryTrans;
-                    }
+                        const entry = jishoData.data[0];
+                        if(entry.senses[0].english_definitions.length > 0) {
+                            searchWord = entry.senses[0].english_definitions[0];
+                        } else {
+                            searchWord = await fetchTranslation(term, "ja|en");
+                        }
+                        pronunciation = entry.japanese[0].reading || ""; 
+                        primaryTrans = term; 
 
-                    if (fallbackWord && fallbackTrans) {
-                         meanings.push({
-                            partOfSpeech: "Translation",
-                            definitions: [{ ja: fallbackTrans, en: "", exEn: "", exJa: "" }]
+                        entry.senses.slice(0, 3).forEach(sense => {
+                            const posRaw = sense.parts_of_speech.join(', ') || 'Common';
+                            const defs = sense.english_definitions.join('; ');
+                            meanings.push({
+                                partOfSpeech: posRaw,
+                                definitions: [{ ja: defs, en: "", exEn: "", exJa: "" }]
+                            });
                         });
-                        tips = "翻訳ソフトを使用";
-                        searchWord = fallbackWord;
-                        primaryTrans = fallbackTrans;
                     } else {
-                        throw new Error("NOT_FOUND");
+                        const entries = jishoData.data.slice(0, 5);
+                        const first = entries[0];
+                        primaryTrans = first.japanese[0].word || first.japanese[0].reading;
+                        pronunciation = first.japanese[0].reading || "";
+
+                        entries.forEach(entry => {
+                            const japWord = entry.japanese[0].word || entry.japanese[0].reading;
+                            const japReading = entry.japanese[0].reading;
+                            let defJa = japWord;
+                            if (japReading && japReading !== japWord) defJa += ` (${japReading})`;
+                            const pos = entry.senses[0].parts_of_speech.length > 0 ? entry.senses[0].parts_of_speech.join(', ') : 'Common';
+                            const engDefs = entry.senses.map(s => s.english_definitions.join(', ')).join('; ');
+
+                            meanings.push({
+                                partOfSpeech: pos,
+                                definitions: [{ ja: defJa, en: engDefs, exEn: "", exJa: "" }]
+                            });
+                        });
+                        searchWord = term;
                     }
                 }
-                
-                const finalWord = isJpSearch ? searchWord : term;
-                const finalTrans = isJpSearch ? term : primaryTrans;
+            } catch (e) {}
 
-                return {
-                    word: finalWord,
-                    pronunciation: pronunciation,
-                    translation: finalTrans,
-                    meanings: meanings,
-                    definition: meanings[0]?.definitions[0]?.ja || finalTrans,
-                    example: meanings[0]?.definitions[0]?.exEn || "",
-                    synonyms: synonyms,
-                    audioUrl: audioUrl, 
-                    tips: tips
-                };
-            } catch (e) {
-                console.error("Logic Error:", e);
-                throw e;
+            if (!jishoFound) {
+                let trans = "";
+                if (isJpSearch) {
+                    trans = await fetchTranslation(term, "ja|en");
+                    searchWord = trans;
+                    primaryTrans = term;
+                } else {
+                    trans = await fetchTranslation(term, "en|ja");
+                    searchWord = term;
+                    primaryTrans = trans;
+                }
+                
+                if (trans) {
+                    meanings.push({
+                        partOfSpeech: "Translation",
+                        definitions: [{ ja: isJpSearch ? term : trans, en: "", exEn: "", exJa: "" }]
+                    });
+                    tips = "翻訳ソフトを使用";
+                } else {
+                    throw new Error("NOT_FOUND");
+                }
             }
+
+            // 2. Free Dictionary (Enrichment)
+            if (searchWord) {
+                try {
+                    const dictData = await fetchFreeDictData(searchWord);
+                    if (dictData && dictData.length > 0) {
+                        const entry = dictData[0];
+                        const p = entry.phonetics.find(p => p.audio && p.audio !== "");
+                        if (p) audioUrl = p.audio;
+                        if (!pronunciation && !isJpSearch) pronunciation = entry.phonetic || "";
+
+                        synonyms = entry.meanings.flatMap(m => m.synonyms).slice(0, 5);
+
+                        if (meanings.length > 0) {
+                            for (const m of entry.meanings) {
+                                const defWithEx = m.definitions.find(d => d.example);
+                                if (defWithEx) {
+                                    const target = isJpSearch 
+                                        ? meanings[0] 
+                                        : meanings.find(item => item.partOfSpeech.toLowerCase().includes(m.partOfSpeech.toLowerCase()));
+                                    
+                                    if (target && target.definitions[0] && !target.definitions[0].exEn) {
+                                        target.definitions[0].exEn = defWithEx.example;
+                                        target.definitions[0].exJa = await fetchTranslation(defWithEx.example, "en|ja");
+                                        if (isJpSearch) break;
+                                    }
+                                }
+                            }
+                        } else if (!isJpSearch && !jishoFound) {
+                             // JishoなしFreeDictあり
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            return {
+                word: searchWord,
+                pronunciation,
+                translation: primaryTrans,
+                meanings,
+                definition: meanings[0]?.definitions[0]?.ja || primaryTrans,
+                example: meanings[0]?.definitions[0]?.exEn || "",
+                synonyms,
+                audioUrl,
+                tips
+            };
         };
 
         const speak = (text, audioUrl = null) => {
@@ -483,21 +484,35 @@
             const [loading, setLoading] = useState(false);
             const [loadingMsg, setLoadingMsg] = useState('');
             const resultRef = useRef(null);
+            const richDataLoadedRef = useRef(false);
             
             const handleSearch = async (e) => {
-                e.preventDefault();
+                if (e) e.preventDefault();
                 if (!term.trim()) return;
+                
                 setLoading(true);
-                setLoadingMsg(isJapanese(term) ? "日英辞書を検索中..." : "検索中...");
+                setLoadingMsg("検索中...");
                 setExternalResult(null);
+                richDataLoadedRef.current = false;
+
+                fetchQuickData(term).then(quickData => {
+                    if (!richDataLoadedRef.current) {
+                        setExternalResult(quickData);
+                        setLoading(false);
+                    }
+                }).catch(() => {});
+
                 try {
-                    const data = await fetchDictionaryData(term);
-                    setExternalResult(data);
+                    const richData = await fetchRichData(term);
+                    richDataLoadedRef.current = true;
+                    setExternalResult(richData);
                 } catch (err) {
-                    if (err.message === "NOT_FOUND") {
-                        setToast('見つかりませんでした。スペルを確認してください。');
-                    } else {
-                        setToast('検索エラーが発生しました。');
+                    if (!richDataLoadedRef.current && !externalResult) {
+                        if (err.message === "NOT_FOUND") {
+                            setToast('見つかりませんでした。');
+                        } else {
+                            setToast('検索エラーが発生しました。');
+                        }
                     }
                 }
                 setLoading(false);
@@ -521,7 +536,7 @@
                                 value={term}
                                 onChange={(e) => setTerm(e.target.value)}
                                 className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" 
-                                placeholder="単語を入力 (例: apple / リンゴ)" 
+                                placeholder="単語を入力 (例: rabbit / うさぎ)" 
                             />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
                             <button type="submit" className="absolute right-2 top-2 bg-[#258FAF] text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-md active:scale-95 transition-transform">
@@ -634,9 +649,18 @@
                                     </div>
                                 )}
                             </div>
-                            <div className="mt-6 text-center border-t border-gray-100 pt-4">
-                                <p className="text-[10px] text-gray-300">
-                                    Data sources: <a href="https://dictionaryapi.dev/" target="_blank" className="hover:text-gray-400">Free Dictionary API</a>, <a href="https://jisho.org/" target="_blank" className="hover:text-gray-400">Jisho.org</a> & <a href="https://mymemory.translated.net/" target="_blank" className="hover:text-gray-400">MyMemory</a>
+                            <div className="mt-8 pt-4 border-t border-gray-100 text-[10px] text-gray-400 text-center leading-relaxed">
+                                <p className="mb-1">Data Sources:</p>
+                                <p>
+                                    <a href="https://www.edrdg.org/jmdict/j_jmdict.html" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">JMdict (EDRDG)</a> via <a href="https://jisho.org/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Jisho.org</a>
+                                    {' & '}
+                                    <a href="https://en.wiktionary.org/wiki/Wiktionary:Main_Page" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Wiktionary</a> via <a href="https://dictionaryapi.dev/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Free Dictionary API</a>
+                                </p>
+                                <p className="mt-1">
+                                    Translations by <a href="https://lingva.ml/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Lingva</a> & <a href="https://mymemory.translated.net/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">MyMemory</a>.
+                                </p>
+                                <p className="mt-1">
+                                    This data is available under the <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">CC BY-SA 3.0 license</a>.
                                 </p>
                             </div>
                         </div>
@@ -964,8 +988,8 @@
                     <header 
                         className="p-4 z-50 flex justify-between items-center h-16 neu-flat mx-4 mt-4 mb-2 relative cursor-pointer hover:opacity-80 transition-opacity"
                     >
-                        <div className="flex-1" onClick={resetToHome}>
-                            <h1 className="text-xl font-bold tracking-tight text-[#258FAF] text-center">Wordloop</h1>
+                        <div className="flex-1 flex justify-center items-center" onClick={resetToHome}>
+                            <img src="wordloop-top.svg" alt="Wordloop" className="h-8" />
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} className="absolute right-4 text-gray-400 hover:text-[#258FAF]">
                             <i className="fas fa-cog"></i>
