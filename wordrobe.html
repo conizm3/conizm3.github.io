@@ -18,6 +18,9 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
+    <!-- Dexie.js (IndexedDB Wrapper) -->
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
+
     <!-- Firebase SDK (Compat) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -82,14 +85,14 @@
         .fade-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Toast専用アニメーション (中央寄せを維持) */
+        /* Toast専用アニメーション */
         @keyframes toastFadeIn {
             from { opacity: 0; transform: translate(-50%, 20px); }
             to { opacity: 1; transform: translate(-50%, 0); }
         }
         .toast-anim {
             animation: toastFadeIn 0.4s ease-out forwards;
-            left: 50%; /* 確実に中央へ */
+            left: 50%;
             transform: translate(-50%, 0);
         }
         
@@ -106,15 +109,34 @@
             to { opacity: 0; transform: translateX(-50px); } 
         }
         
-        /* Swipe Hint Animation (Icon) */
-        .animate-swipe-icon {
-            animation: swipeIcon 1.5s infinite ease-in-out;
+        /* Swipe Hint Animation (Icon) - Slide Left/Right Slower */
+        .animate-slide-hand-slow {
+            animation: slideHandSlow 3s infinite ease-in-out;
         }
-        @keyframes swipeIcon {
-            0% { transform: translateX(10px); opacity: 0; }
-            20% { opacity: 1; }
-            80% { opacity: 1; }
-            100% { transform: translateX(-20px); opacity: 0; }
+        @keyframes slideHandSlow {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-20px); } /* Left */
+            50% { transform: translateX(0); }
+            75% { transform: translateX(20px); } /* Right */
+            100% { transform: translateX(0); }
+        }
+
+        /* Flow Animation for Arrows */
+        .animate-flow-left {
+            animation: flowLeft 1.5s infinite;
+        }
+        @keyframes flowLeft {
+            0% { opacity: 0; transform: translateX(10px); }
+            50% { opacity: 1; transform: translateX(0); }
+            100% { opacity: 0; transform: translateX(-10px); }
+        }
+        .animate-flow-right {
+            animation: flowRight 1.5s infinite;
+        }
+        @keyframes flowRight {
+            0% { opacity: 0; transform: translateX(-10px); }
+            50% { opacity: 1; transform: translateX(0); }
+            100% { opacity: 0; transform: translateX(10px); }
         }
 
         /* Card Flip Fixed */
@@ -188,9 +210,15 @@
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
-        const db = firebase.firestore();
+        const db_firebase = firebase.firestore();
         const auth = firebase.auth();
         const analytics = firebase.analytics();
+
+        // --- DB Setup (Dexie.js) ---
+        const db = new Dexie('WordloopDB');
+        db.version(1).stores({
+            words: '++id, word, nextReview, interval, repetition, efactor, addedAt'
+        });
 
         const { useState, useEffect, useRef } = React;
 
@@ -251,7 +279,21 @@
             const isJp = isJapanese(term);
             const langPair = isJp ? "ja|en" : "en|ja";
             
-            const trans = await translateText(term, langPair);
+            // 修正: 英語入力の場合はスペルチェックのためにFreeDictも同時に叩く (Strict Mode)
+            const promises = [translateText(term, langPair)];
+            if (!isJp) {
+                // 英文判定: スペースが含まれる場合は単語チェックをスキップ
+                if (!term.trim().includes(' ')) {
+                    promises.push(fetchFreeDictData(term));
+                }
+            }
+
+            const [trans, freeDictResult] = await Promise.all(promises);
+
+            // 英語入力(単語)でFreeDictが見つからなければスペルミスとみなす
+            if (!isJp && !term.trim().includes(' ') && (!freeDictResult || freeDictResult.length === 0 || (freeDictResult.title && freeDictResult.title === "No Definitions Found"))) {
+                throw new Error("NOT_FOUND");
+            }
             
             if (!trans) throw new Error("Translation failed");
 
@@ -303,7 +345,15 @@
 
             if (!jishoFound) {
                 let trans = await translateText(term, isJpSearch ? "ja|en" : "en|ja");
+                
+                // 修正: 英語入力でJishoになく、文章でもない場合はFreeDictをチェック（スペルミス判定の再確認）
+                if (!isJpSearch && !term.trim().includes(' ')) {
+                     const fd = await fetchFreeDictData(term);
+                     if (!fd || fd.length === 0) throw new Error("NOT_FOUND");
+                }
+
                 if (!trans) throw new Error("NOT_FOUND");
+                
                 searchWord = isJpSearch ? trans : term;
                 primaryTrans = isJpSearch ? term : trans;
                 meanings.push({ partOfSpeech: "Translation", definitions: [{ ja: primaryTrans, en: "", exEn: "", exJa: "" }] });
@@ -453,15 +503,11 @@
             const resultRef = useRef(null);
             const searchIdRef = useRef(0);
             const isDataRichRef = useRef(false);
-            // 修正: マウント状態管理用のRefを追加
             const isMounted = useRef(true);
 
-            // 修正: マウント/アンマウントの検知
             useEffect(() => {
                 isMounted.current = true;
-                return () => {
-                    isMounted.current = false;
-                };
+                return () => { isMounted.current = false; };
             }, []);
             
             const handleSearch = async (e) => {
@@ -481,12 +527,18 @@
                         setExternalResult(quickData);
                         setLoading(false);
                     }
-                }).catch(() => {});
+                }).catch(err => {
+                    if (isMounted.current && currentId === searchIdRef.current && err.message === "NOT_FOUND") {
+                        setLoading(false);
+                        setIsEnriching(false);
+                        openAlert('見つかりませんでした。\nスペルを確認してください。');
+                    }
+                });
 
                 try {
                     const coreData = await fetchRichData(term);
                     
-                    // 修正: 確報データが取れた時点で、保存済みならバックグラウンドで更新
+                    // 修正: 確報取得時点で、バックグラウンドでDB更新を実行
                     onUpdateWord(coreData);
 
                     if (isMounted.current && currentId === searchIdRef.current) {
@@ -495,11 +547,10 @@
                         setLoading(false);
 
                         fetchEnrichment(coreData, term).then(enriched => {
-                             // 修正: 詳細データが取れたら、保存済みならバックグラウンドで更新
+                            // 修正: 詳細データ取得時もDB更新
                             if (enriched) {
                                 onUpdateWord(enriched);
                             }
-
                             if (isMounted.current && currentId === searchIdRef.current && enriched) {
                                 setExternalResult(prev => ({...prev, ...enriched}));
                             }
@@ -507,7 +558,7 @@
                              if (isMounted.current && currentId === searchIdRef.current) setIsEnriching(false); 
                         });
                     } else {
-                        // 修正: 画面から離れていても、詳細データの取得と更新を継続する
+                        // 修正: マウントされていなくても詳細取得を継続しDB更新
                          fetchEnrichment(coreData, term).then(enriched => {
                             if (enriched) {
                                 onUpdateWord(enriched);
@@ -530,18 +581,15 @@
                 if (externalResult && resultRef.current) resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, [externalResult]);
 
-            // 自動データ更新ロジック (画面上のデータと同期)
+            // 画面表示上のデータ同期 (ただしDB更新は onUpdateWord で一元管理)
             useEffect(() => {
                 if (externalResult) {
                     const savedItem = savedWords.find(w => w.word === externalResult.word);
-                    if (savedItem) {
-                        // 簡易チェック: ヒントや音声URLが変わっていたら更新
-                        if (savedItem.tips !== externalResult.tips || savedItem.audioUrl !== externalResult.audioUrl || (!savedItem.example && externalResult.example)) {
-                            onUpdateWord(externalResult);
-                        }
-                    }
+                    // ここではDB更新は行わない（handleSearch内の明示的な呼び出しに任せる）
+                    // 画面同期のみ行うべきだが、savedWordsはDBからのロード結果なので
+                    // DBが更新されればsavedWordsも更新される（handleUpdateWord経由で）
                 }
-            }, [externalResult, savedWords, onUpdateWord]);
+            }, [externalResult, savedWords]);
 
             const currentData = externalResult;
             const isSaved = currentData && savedWords.some(w => w.word === currentData.word);
@@ -563,16 +611,7 @@
 
                     {currentData && (
                         <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8">
-                            {/* 閉じるボタン (中央上部配置) */}
-                            {isFromList && (
-                                <button 
-                                    onClick={onBack} 
-                                    className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-white text-gray-400 w-10 h-10 rounded-full shadow-md flex items-center justify-center z-20 hover:text-[#258FAF] transition-colors border border-gray-100"
-                                >
-                                    <i className="fas fa-times text-lg"></i>
-                                </button>
-                            )}
-
+                            {isFromList && <button onClick={onBack} className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-white text-gray-400 w-10 h-10 rounded-full shadow-md flex items-center justify-center z-20 hover:text-[#258FAF] transition-colors border border-gray-100"><i className="fas fa-times text-lg"></i></button>}
                             <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
                                 <div>
                                     <h2 className="text-3xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{currentData.word}</h2>
@@ -618,10 +657,17 @@
                         </div>
                     )}
                     
-                    {/* 修正: 右下フローティングボタン (z-index=60で手前に) */}
                     {!isFromList && currentData && (
                         <button
-                            onClick={() => { setExternalResult(null); setTerm(''); }}
+                            onClick={() => { 
+                                searchIdRef.current++; 
+                                setExternalResult(null); 
+                                setTerm(''); 
+                                setLoading(false);
+                                setIsEnriching(false);
+                                const mainEl = document.querySelector('main');
+                                if (mainEl) mainEl.scrollTop = 0;
+                            }}
                             className="fixed bottom-[160px] right-4 w-14 h-14 bg-[#258FAF] text-white rounded-full shadow-lg flex items-center justify-center z-[60] hover:bg-[#1d6f8c] transition-transform active:scale-95"
                         >
                             <i className="fas fa-search text-xl"></i>
@@ -670,7 +716,7 @@
             const [index, setIndex] = useState(0);
             const [isFlipped, setIsFlipped] = useState(false);
             const [isExiting, setIsExiting] = useState(false);
-            const [isSwipeAction, setIsSwipeAction] = useState(null); // "clear" or "unclear"
+            const [isSwipeAction, setIsSwipeAction] = useState(null); 
             const touchStartX = useRef(null);
             const cardRef = useRef(null);
 
@@ -702,6 +748,9 @@
 
             useEffect(() => {
                if (isStarted && index >= queue.length) {
+                   setIsStarted(false);
+                   setQueue([]);
+                   setIndex(0);
                    openAlert('復習完了！お疲れ様でした。');
                    onFinish();
                }
@@ -733,8 +782,8 @@
                 const distance = touchStartX.current - touchEndX;
                 
                 if (Math.abs(distance) > 100) { 
-                    if (distance > 0) handleNext(false); // Left -> Unclear
-                    else handleNext(true); // Right -> Clear
+                    if (distance > 0) handleNext(false); 
+                    else handleNext(true); 
                 } else {
                     cardRef.current.style.transform = '';
                     setIsSwipeAction(null);
@@ -777,7 +826,7 @@
                                     </button>
                                 </div>
                                 
-                                {/* Swipe Feedback Stamps (Revised Colors) */}
+                                {/* Swipe Feedback Stamps */}
                                 {isSwipeAction === 'clear' && (
                                     <div className="absolute top-10 right-10 border-4 border-[#258FAF] text-[#258FAF] font-black text-2xl p-2 rounded transform rotate-12 opacity-80 pointer-events-none">CLEAR</div>
                                 )}
@@ -787,8 +836,16 @@
 
                                 <div className="absolute bottom-6 w-full flex flex-col items-center gap-2">
                                     <p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p>
-                                    <div className="md:hidden text-gray-300 animate-swipe-icon flex items-center mt-1 gap-4">
-                                        <i className="fas fa-hand-pointer text-xl rotate-[-45deg]"></i>
+                                    {/* 修正: ガイドUI */}
+                                    <div className="md:hidden text-gray-300 flex items-center mt-1 gap-6 w-full justify-center px-8">
+                                        <span className="text-lg font-bold text-gray-400 opacity-80 animate-flow-x">✕</span>
+                                        <div className="flex items-center gap-1 text-gray-400 animate-flow-left opacity-50"><i className="fas fa-chevron-left text-xs"></i></div>
+                                        <div className="animate-slide-hand mx-2 flex flex-col items-center">
+                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80"></i>
+                                            <span className="text-[8px] text-gray-400 mt-1">swipe</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-[#258FAF] animate-flow-right opacity-50"><i className="fas fa-chevron-right text-xs"></i></div>
+                                        <span className="text-lg font-bold text-[#258FAF] opacity-80 animate-flow-o">◯</span>
                                     </div>
                                 </div>
                             </div>
@@ -811,8 +868,8 @@
                         </div>
                     </div>
                     
-                    {/* 修正: ボタン色をテーマカラー(Blue)に合わせ、アイコンを◯✕に */}
-                    <div className="w-full max-w-sm mt-4 md:mt-8 flex gap-4">
+                    {/* PC Buttons */}
+                    <div className="w-full max-w-sm mt-4 md:mt-8 flex gap-4 hidden md:flex">
                         <button onClick={() => handleNext(false)} className="flex-1 bg-slate-200 text-slate-600 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="fas fa-times"></i> Unclear</button>
                         <button onClick={() => handleNext(true)} className="flex-1 bg-[#258FAF] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="far fa-circle"></i> Clear</button>
                     </div>
@@ -888,23 +945,61 @@
                 });
             };
 
-            const handleUpdateWord = (wordData) => {
+            // 修正: IndexedDBも更新するように変更
+            const handleUpdateWord = async (wordData) => {
+                // State更新
                 setSavedWords(prev => prev.map(w => w.word === wordData.word ? { ...w, ...wordData } : w));
+                
+                // DB更新
+                try {
+                    const wordInDb = await db.words.where('word').equals(wordData.word).first();
+                    if (wordInDb) {
+                         // id以外のフィールドを更新（IDはそのまま）
+                         // 念の為、IDを除外したオブジェクトを作成
+                        const { id, ...updates } = wordData;
+                        await db.words.update(wordInDb.id, updates);
+                    }
+                } catch (e) {
+                    console.error("DB Update Failed", e);
+                }
             };
 
-            const handleSaveWord = (wordData) => {
-                const exists = savedWords.some(w => w.word === wordData.word);
-                if (exists) {
-                    setSavedWords(prev => prev.filter(w => w.word !== wordData.word));
-                    showToast('削除しました');
-                } else {
-                    setSavedWords(prev => [wordData, ...prev]);
-                    showToast('保存しました');
+            const handleSaveWord = async (wordData) => {
+                try {
+                    const exists = savedWords.some(w => w.word === wordData.word);
+                    if (exists) {
+                        // Remove from DB & State
+                        const wordToDelete = savedWords.find(w => w.word === wordData.word);
+                        // DBから削除（以前のコードでIDを持っていない可能性もあるので、wordで再検索して削除）
+                         const wordInDb = await db.words.where('word').equals(wordData.word).first();
+                         if(wordInDb) await db.words.delete(wordInDb.id);
+
+                        setSavedWords(prev => prev.filter(w => w.word !== wordData.word));
+                        showToast('削除しました');
+                    } else {
+                        // Add to DB & State
+                        const newWord = { 
+                            ...wordData, 
+                            addedAt: Date.now(),
+                            nextReview: Date.now(),
+                            interval: 0,
+                            repetition: 0,
+                            efactor: 2.5
+                        };
+                        const id = await db.words.add(newWord); // Dexie returns ID
+                        setSavedWords(prev => [{ ...newWord, id }, ...prev]);
+                        showToast('保存しました');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    openAlert("保存エラー発生");
                 }
             };
 
             const handleDeleteWord = (word) => {
-                openConfirm(`「${word}」を削除しますか？`, () => {
+                openConfirm(`「${word}」を削除しますか？`, async () => {
+                    const wordInDb = await db.words.where('word').equals(word).first();
+                    if(wordInDb) await db.words.delete(wordInDb.id);
                     setSavedWords(prev => prev.filter(w => w.word !== word));
                 });
             };
@@ -913,6 +1008,8 @@
                 setSearchResult(wordData);
                 setTab('search');
                 setIsFromList(true); 
+                const mainEl = document.querySelector('main');
+                if (mainEl) mainEl.scrollTop = 0;
             };
             
             const resetToHome = () => {
@@ -921,7 +1018,6 @@
                 setIsFromList(false);
                 setSearchViewKey(prev => prev + 1); 
                 
-                // Reset scroll of main
                 const mainEl = document.querySelector('main');
                 if (mainEl) mainEl.scrollTop = 0;
             };
@@ -955,8 +1051,11 @@
                     try {
                         const imported = JSON.parse(event.target.result);
                         if (Array.isArray(imported)) {
-                            openConfirm('現在のデータを上書きしますか？\n（既存の単語帳は消え、ファイルの内容になります）', () => {
-                                setSavedWords(imported);
+                            openConfirm('現在のデータを上書きしますか？\n（既存のデータは消去されます）', async () => {
+                                await db.words.clear();
+                                await db.words.bulkAdd(imported);
+                                const newWords = await db.words.toArray();
+                                setSavedWords(newWords.sort((a,b) => b.addedAt - a.addedAt));
                                 showToast('データを復元しました');
                                 setIsSettingsOpen(false);
                             });
@@ -1008,7 +1107,7 @@
                         {tab === 'review' && (
                             <ReviewView 
                                 savedWords={savedWords} 
-                                onFinish={() => setTab('search')}
+                                onFinish={() => resetToHome()}
                                 openAlert={openAlert}
                             />
                         )}
