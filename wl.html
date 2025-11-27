@@ -34,6 +34,7 @@
             --accent: #258FAF;
             --shadow-light: #FFFFFF;
             --shadow-dark: #E6EFF5;
+            --ad-height: 60px;
         }
         body {
             font-family: 'Noto Sans JP', sans-serif;
@@ -80,6 +81,17 @@
         /* Animations */
         .fade-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Toast専用アニメーション (中央寄せを維持) */
+        @keyframes toastFadeIn {
+            from { opacity: 0; transform: translate(-50%, 20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .toast-anim {
+            animation: toastFadeIn 0.4s ease-out forwards;
+            left: 50%; /* 確実に中央へ */
+            transform: translate(-50%, 0);
+        }
         
         /* Review Card Animations */
         .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
@@ -129,6 +141,33 @@
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* 広告枠のスタイル */
+        .ad-slot {
+            background-color: #E2E8F0;
+            border: 2px dashed #CBD5E1;
+            color: #94A3B8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            letter-spacing: 0.05em;
+        }
+        .ad-footer-space {
+            height: var(--ad-height);
+            width: 100%;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            z-index: 60;
+        }
+        .nav-with-ad {
+            bottom: var(--ad-height) !important;
+        }
+        .main-with-ad {
+            padding-bottom: calc(80px + var(--ad-height) + 16px) !important;
+        }
     </style>
 </head>
 <body>
@@ -191,23 +230,6 @@
         };
 
         // --- API Functions ---
-
-        // 1. Translation (Lingva ONLY)
-        const fetchTranslation = async (term, langPair) => {
-            const [source, target] = langPair.split('|');
-            try {
-                const res = await fetch(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(term)}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    return data.translation;
-                }
-            } catch (e) { 
-                return null; 
-            }
-            return null;
-        };
-
-        // 2. Dictionary APIs
         const fetchJishoData = async (term) => {
             try {
                 const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
@@ -225,13 +247,11 @@
         };
 
         // --- Data Fetching Strategies ---
-
-        // Phase 1: 速報 (Translation Only)
         const fetchQuickData = async (term) => {
             const isJp = isJapanese(term);
             const langPair = isJp ? "ja|en" : "en|ja";
             
-            const trans = await fetchTranslation(term, langPair);
+            const trans = await translateText(term, langPair);
             
             if (!trans) throw new Error("Translation failed");
 
@@ -251,57 +271,30 @@
             };
         };
 
-        // Phase 2: 確報 (Core Dictionary - Jisho)
-        const fetchCoreData = async (term) => {
-            const isJpSearch = isJapanese(term);
-            let searchWord = term;
-            let primaryTrans = "";
-            let meanings = [];
-            let pronunciation = "";
-            let jishoFound = false;
+        const fetchRichData = async (term) => {
+            let searchWord = term, isJpSearch = isJapanese(term), tips = "公開辞書/翻訳データ", primaryTrans = "", meanings = [], pronunciation = "", synonyms = [], audioUrl = "", jishoFound = false;
 
-            // 1. Jisho.org
             try {
                 const jishoData = await fetchJishoData(term);
                 if (jishoData && jishoData.data && jishoData.data.length > 0) {
                     jishoFound = true;
-                    
+                    tips = "Jisho.org";
                     if (isJpSearch) {
                         const entry = jishoData.data[0];
-                        if(entry.senses[0].english_definitions.length > 0) {
-                            searchWord = entry.senses[0].english_definitions[0];
-                        } else {
-                            searchWord = await fetchTranslation(term, "ja|en");
-                        }
-                        pronunciation = entry.japanese[0].reading || ""; 
-                        primaryTrans = term; 
-
-                        entry.senses.slice(0, 3).forEach(sense => {
-                            const posRaw = sense.parts_of_speech.join(', ') || 'Common';
-                            const defs = sense.english_definitions.join('; ');
-                            meanings.push({
-                                partOfSpeech: posRaw,
-                                definitions: [{ ja: defs, en: "", exEn: "", exJa: "" }]
-                            });
-                        });
+                        searchWord = entry.senses[0].english_definitions[0] || await translateText(term, "ja|en");
+                        primaryTrans = term;
+                        pronunciation = entry.japanese[0].reading || "";
+                        entry.senses.slice(0, 3).forEach(s => meanings.push({ partOfSpeech: s.parts_of_speech.join(', ') || 'Common', definitions: [{ ja: s.english_definitions.join('; '), en: "", exEn: "", exJa: "" }] }));
                     } else {
                         const entries = jishoData.data.slice(0, 5);
-                        const first = entries[0];
-                        primaryTrans = first.japanese[0].word || first.japanese[0].reading;
-                        pronunciation = first.japanese[0].reading || "";
-
-                        entries.forEach(entry => {
-                            const japWord = entry.japanese[0].word || entry.japanese[0].reading;
-                            const japReading = entry.japanese[0].reading;
-                            let defJa = japWord;
-                            if (japReading && japReading !== japWord) defJa += ` (${japReading})`;
-                            const pos = entry.senses[0].parts_of_speech.length > 0 ? entry.senses[0].parts_of_speech.join(', ') : 'Common';
-                            const engDefs = entry.senses.map(s => s.english_definitions.join(', ')).join('; ');
-
-                            meanings.push({
-                                partOfSpeech: pos,
-                                definitions: [{ ja: defJa, en: engDefs, exEn: "", exJa: "" }]
-                            });
+                        primaryTrans = entries[0].japanese[0].word || entries[0].japanese[0].reading;
+                        entries.forEach(e => {
+                            const w = e.japanese[0].word || e.japanese[0].reading;
+                            const r = e.japanese[0].reading;
+                            const defJa = (r && r !== w) ? `${w} (${r})` : w;
+                            const engDefs = e.senses.map(s => s.english_definitions.join(', ')).join('; ');
+                            const pos = e.senses[0].parts_of_speech.join(', ') || 'Common';
+                            meanings.push({ partOfSpeech: pos, definitions: [{ ja: defJa, en: engDefs, exEn: "", exJa: "" }] });
                         });
                         searchWord = term;
                     }
@@ -309,96 +302,52 @@
             } catch (e) {}
 
             if (!jishoFound) {
-                let trans = "";
-                if (isJpSearch) {
-                    trans = await fetchTranslation(term, "ja|en");
-                    searchWord = trans;
-                    primaryTrans = term;
-                } else {
-                    trans = await fetchTranslation(term, "en|ja");
-                    searchWord = term;
-                    primaryTrans = trans;
-                }
-                
-                if (trans) {
-                    meanings.push({
-                        partOfSpeech: "Translation",
-                        definitions: [{ ja: isJpSearch ? term : trans, en: "", exEn: "", exJa: "" }]
-                    });
-                } else {
-                    throw new Error("NOT_FOUND");
-                }
+                let trans = await translateText(term, isJpSearch ? "ja|en" : "en|ja");
+                if (!trans) throw new Error("NOT_FOUND");
+                searchWord = isJpSearch ? trans : term;
+                primaryTrans = isJpSearch ? term : trans;
+                meanings.push({ partOfSpeech: "Translation", definitions: [{ ja: primaryTrans, en: "", exEn: "", exJa: "" }] });
+                tips = "翻訳ソフト";
             }
 
-            return {
-                word: searchWord,
-                translation: primaryTrans,
-                meanings,
-                pronunciation: "", 
-                synonyms: [],
-                audioUrl: "",
-                definition: meanings[0]?.definitions[0]?.ja || primaryTrans,
-                example: "",
-                tips: jishoFound ? "Jisho.org (日英/英日辞書) 経由" : "翻訳ソフトを使用"
-            };
+            return { word: searchWord, translation: primaryTrans, meanings, pronunciation, synonyms: [], audioUrl: "", definition: meanings[0]?.definitions[0]?.ja || primaryTrans, example: "", tips };
         };
 
-        // Phase 3: 補完 (Enrichment - FreeDict)
         const fetchEnrichment = async (currentData, term) => {
             const searchWord = currentData.word;
             const isJpSearch = isJapanese(term);
-            
             try {
                 const dictData = await fetchFreeDictData(searchWord);
                 if (!dictData || dictData.length === 0) return null;
-
                 const entry = dictData[0];
-                const newData = { ...currentData }; 
-                
-                // 音声
+                const newData = { ...currentData };
                 const p = entry.phonetics.find(p => p.audio && p.audio !== "");
                 if (p) newData.audioUrl = p.audio;
-                
-                // 発音記号
-                if (!newData.pronunciation && !isJpSearch) {
-                    newData.pronunciation = entry.phonetic || (entry.phonetics.find(p => p.text)?.text || "");
-                }
-
+                if (!newData.pronunciation && !isJpSearch) newData.pronunciation = entry.phonetic || "";
                 newData.synonyms = entry.meanings.flatMap(m => m.synonyms).slice(0, 5);
-
+                
                 const injectionPromises = [];
+                const usedExamples = new Set();
 
                 for (let i = 0; i < newData.meanings.length; i++) {
                     const targetM = newData.meanings[i];
                     if (targetM.definitions[0].exEn) continue;
-
                     const targetPos = targetM.partOfSpeech.toLowerCase();
-                    
                     const freeM = entry.meanings.find(m => targetPos.includes(m.partOfSpeech.toLowerCase()) || targetPos === 'common' || targetM.partOfSpeech === 'Common');
-                    
                     if (freeM) {
-                        const defWithEx = freeM.definitions.find(d => d.example);
+                        const defWithEx = freeM.definitions.find(d => d.example && !usedExamples.has(d.example));
                         if (defWithEx) {
                             targetM.definitions[0].exEn = defWithEx.example;
-                            injectionPromises.push(
-                                translateText(defWithEx.example, "en|ja").then(ja => {
-                                    targetM.definitions[0].exJa = ja;
-                                })
-                            );
+                            usedExamples.add(defWithEx.example); 
+                            injectionPromises.push(translateText(defWithEx.example, "en|ja").then(ja => targetM.definitions[0].exJa = ja));
                         }
                     }
                 }
-                
                 await Promise.all(injectionPromises);
                 newData.example = newData.meanings[0]?.definitions[0]?.exEn || "";
-
                 return newData;
-
-            } catch(e) {
-                return null;
-            }
+            } catch(e) { return null; }
         };
-
 
         const speak = (text, audioUrl = null) => {
             if (audioUrl) {
@@ -411,9 +360,7 @@
             ut.lang = 'en-US';
             const voices = window.speechSynthesis.getVoices();
             const enVoice = voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en'));
-            if (enVoice) {
-                ut.voice = enVoice;
-            }
+            if (enVoice) ut.voice = enVoice;
             window.speechSynthesis.speak(ut);
         };
 
@@ -431,7 +378,7 @@
                 return () => clearTimeout(timer);
             }, []);
             return (
-                <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 neu-flat px-6 py-3 rounded-full text-sm text-[#258FAF] font-bold z-[60] fade-in shadow-lg text-center whitespace-nowrap bg-white">
+                <div className="fixed bottom-32 left-1/2 toast-anim neu-flat px-6 py-3 rounded-full text-sm text-[#258FAF] font-bold z-[100] shadow-lg text-center whitespace-nowrap bg-white border border-gray-100">
                     {msg}
                 </div>
             );
@@ -440,24 +387,14 @@
         const DialogModal = ({ isOpen, type, message, onConfirm, onCancel }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 bg-slate-100/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
-                    <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-xs text-center">
+                <div className="fixed inset-0 bg-slate-100/90 z-[80] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
+                    <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-xs text-center border border-white">
                         <p className="text-gray-700 font-bold mb-6 leading-relaxed whitespace-pre-wrap text-sm">{message}</p>
                         <div className="flex gap-4 justify-center">
                             {type === 'confirm' && (
-                                <button 
-                                    onClick={onCancel} 
-                                    className="neu-btn w-24 py-3 text-gray-500 font-bold text-xs rounded-xl"
-                                >
-                                    キャンセル
-                                </button>
+                                <button onClick={onCancel} className="neu-btn w-24 py-3 text-gray-500 font-bold text-xs rounded-xl">キャンセル</button>
                             )}
-                            <button 
-                                onClick={onConfirm} 
-                                className="bg-[#258FAF] text-white w-24 py-3 rounded-xl font-bold text-xs shadow-lg active:scale-95 transition-transform"
-                            >
-                                OK
-                            </button>
+                            <button onClick={onConfirm} className="bg-[#258FAF] text-white w-24 py-3 rounded-xl font-bold text-xs shadow-lg active:scale-95 transition-transform">OK</button>
                         </div>
                     </div>
                 </div>
@@ -468,35 +405,26 @@
             if (!isOpen) return null;
             return (
                 <div className="fixed inset-0 bg-slate-100/90 z-[60] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
-                    <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                    <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-md max-h-[90vh] overflow-y-auto border border-white">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-lg font-bold text-[#258FAF]">設定</h2>
                             <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
                         </div>
                         <div className="mb-6 border-b border-gray-200 pb-6">
-                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2">
-                                <i className="fas fa-cloud"></i> クラウド同期
-                            </h3>
+                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
                             <div>
                                 {user ? (
                                     <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
                                         <p className="text-sm text-green-700 font-bold mb-2">ログイン中</p>
                                         <p className="text-xs text-gray-500 mb-3">{user.email || user.uid}</p>
-                                        <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">
-                                            ログアウト
-                                        </button>
+                                        <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
                                         <p className="text-[10px] text-gray-400 mt-2">データは自動的にクラウドに保存されます</p>
                                     </div>
                                 ) : (
                                     <div className="bg-white p-4 rounded-xl border border-gray-100 text-center">
                                         <p className="text-xs text-gray-500 mb-3">ログインしてデータをバックアップ・同期できます。</p>
                                         <button onClick={onLogin} className="w-full bg-white border border-gray-200 text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
-                                            <svg className="w-5 h-5" viewBox="0 0 24 24">
-                                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-                                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                                            </svg>
+                                            <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
                                             Googleでログイン
                                         </button>
                                     </div>
@@ -506,15 +434,8 @@
                         <div>
                             <h3 className="text-sm font-bold text-gray-500 mb-3">ローカルバックアップ</h3>
                             <div className="flex gap-3">
-                                <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1">
-                                    <i className="fas fa-file-export text-lg"></i>
-                                    保存 (DL)
-                                </button>
-                                <label className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1 cursor-pointer">
-                                    <input type="file" accept=".json" className="hidden" onChange={onImport} />
-                                    <i className="fas fa-file-import text-lg"></i>
-                                    復元
-                                </label>
+                                <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1"><i className="fas fa-file-export text-lg"></i>保存 (DL)</button>
+                                <label className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1 cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={onImport} /><i className="fas fa-file-import text-lg"></i>復元</label>
                             </div>
                         </div>
                     </div>
@@ -524,7 +445,7 @@
 
         // --- 4. Views ---
 
-        const SearchView = ({ onSaveWord, savedWords, setToast, externalResult, setExternalResult, isFromList, onBack, openAlert }) => {
+        const SearchView = ({ onSaveWord, savedWords, setToast, externalResult, setExternalResult, isFromList, onBack, openAlert, onUpdateWord }) => {
             const [term, setTerm] = useState('');
             const [loading, setLoading] = useState(false);
             const [loadingMsg, setLoadingMsg] = useState('');
@@ -532,6 +453,16 @@
             const resultRef = useRef(null);
             const searchIdRef = useRef(0);
             const isDataRichRef = useRef(false);
+            // 修正: マウント状態管理用のRefを追加
+            const isMounted = useRef(true);
+
+            // 修正: マウント/アンマウントの検知
+            useEffect(() => {
+                isMounted.current = true;
+                return () => {
+                    isMounted.current = false;
+                };
+            }, []);
             
             const handleSearch = async (e) => {
                 if (e) e.preventDefault();
@@ -546,36 +477,48 @@
                 setExternalResult(null);
 
                 fetchQuickData(term).then(quickData => {
-                    if (currentId === searchIdRef.current && !isDataRichRef.current) {
+                    if (isMounted.current && currentId === searchIdRef.current && !isDataRichRef.current) {
                         setExternalResult(quickData);
                         setLoading(false);
                     }
                 }).catch(() => {});
 
                 try {
-                    const coreData = await fetchCoreData(term);
+                    const coreData = await fetchRichData(term);
                     
-                    if (currentId === searchIdRef.current) {
+                    // 修正: 確報データが取れた時点で、保存済みならバックグラウンドで更新
+                    onUpdateWord(coreData);
+
+                    if (isMounted.current && currentId === searchIdRef.current) {
                         setExternalResult(coreData);
                         isDataRichRef.current = true;
                         setLoading(false);
 
                         fetchEnrichment(coreData, term).then(enriched => {
-                            if (currentId === searchIdRef.current && enriched) {
+                             // 修正: 詳細データが取れたら、保存済みならバックグラウンドで更新
+                            if (enriched) {
+                                onUpdateWord(enriched);
+                            }
+
+                            if (isMounted.current && currentId === searchIdRef.current && enriched) {
                                 setExternalResult(prev => ({...prev, ...enriched}));
                             }
-                        }).finally(() => {
-                             if (currentId === searchIdRef.current) setIsEnriching(false);
+                        }).finally(() => { 
+                             if (isMounted.current && currentId === searchIdRef.current) setIsEnriching(false); 
+                        });
+                    } else {
+                        // 修正: 画面から離れていても、詳細データの取得と更新を継続する
+                         fetchEnrichment(coreData, term).then(enriched => {
+                            if (enriched) {
+                                onUpdateWord(enriched);
+                            }
                         });
                     }
                 } catch (err) {
-                    if (currentId === searchIdRef.current) {
+                    if (isMounted.current && currentId === searchIdRef.current) {
                         if (!isDataRichRef.current && !externalResult) {
-                            if (err.message === "NOT_FOUND") {
-                                openAlert('見つかりませんでした。\nスペルを確認してください。');
-                            } else {
-                                openAlert('検索エラーが発生しました。');
-                            }
+                            if (err.message === "NOT_FOUND") openAlert('見つかりませんでした。\nスペルを確認してください。');
+                            else openAlert('検索エラーが発生しました。');
                         }
                         setLoading(false);
                         setIsEnriching(false);
@@ -584,10 +527,21 @@
             };
 
             useEffect(() => {
-                if (externalResult && resultRef.current) {
-                    resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
+                if (externalResult && resultRef.current) resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, [externalResult]);
+
+            // 自動データ更新ロジック (画面上のデータと同期)
+            useEffect(() => {
+                if (externalResult) {
+                    const savedItem = savedWords.find(w => w.word === externalResult.word);
+                    if (savedItem) {
+                        // 簡易チェック: ヒントや音声URLが変わっていたら更新
+                        if (savedItem.tips !== externalResult.tips || savedItem.audioUrl !== externalResult.audioUrl || (!savedItem.example && externalResult.example)) {
+                            onUpdateWord(externalResult);
+                        }
+                    }
+                }
+            }, [externalResult, savedWords, onUpdateWord]);
 
             const currentData = externalResult;
             const isSaved = currentData && savedWords.some(w => w.word === currentData.word);
@@ -596,162 +550,94 @@
                 <div className="fade-in">
                     <div className="mb-8 mt-2">
                         <form onSubmit={handleSearch} className="relative">
-                            <input 
-                                type="text" 
-                                value={term}
-                                onChange={(e) => setTerm(e.target.value)}
-                                className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" 
-                                placeholder="単語を入力 (例 : rabbit / うさぎ)" 
-                            />
+                            <input type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
-                            {!isFromList && currentData && (
-                                <button type="button" onClick={() => {setExternalResult(null); setTerm('');}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600">
-                                </button>
-                            )}
-                            <button type="submit" className="absolute right-2 top-2 bg-[#258FAF] text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-md active:scale-95 transition-transform">
-                                <i className="fas fa-arrow-right"></i>
-                            </button>
+                            {!isFromList && currentData && <button type="button" onClick={() => {setExternalResult(null); setTerm('');}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600"></button>}
+                            <button type="submit" className="absolute right-2 top-2 bg-[#258FAF] text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-md active:scale-95 transition-transform"><i className="fas fa-arrow-right"></i></button>
                         </form>
                         <p className="text-[10px] text-gray-400 text-center mt-3 tracking-widest">JAPANESE ⇄ ENGLISH DICTIONARY</p>
                     </div>
 
-                    {loading && (
-                        <div className="flex flex-col items-center justify-center py-12">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#258FAF] mb-4"></div>
-                            <p className="text-sm text-gray-500 animate-pulse">{loadingMsg}</p>
-                        </div>
-                    )}
-
-                    {!loading && !currentData && (
-                        <div className="text-center py-20 opacity-40 select-none">
-                            <div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]">
-                                <i className="fas fa-book text-4xl"></i>
-                            </div>
-                            <p className="font-bold text-gray-500">単語を入力して検索</p>
-                            <p className="text-xs text-gray-400 mt-2">日本語・英語 どちらでも検索できます</p>
-                        </div>
-                    )}
+                    {loading && <div className="flex flex-col items-center justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#258FAF] mb-4"></div><p className="text-sm text-gray-500 animate-pulse">{loadingMsg}</p></div>}
+                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><i className="fas fa-search text-4xl"></i></div><p className="font-bold text-gray-500">単語を入力して検索</p><p className="text-xs text-gray-400 mt-2">日本語・英語 どちらでも検索できます</p></div>}
 
                     {currentData && (
-                        <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in">
+                        <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8">
+                            {/* 閉じるボタン (中央上部配置) */}
                             {isFromList && (
                                 <button 
                                     onClick={onBack} 
-                                    className="mb-4 text-sm text-gray-400 hover:text-[#258FAF] flex items-center gap-1 transition-colors"
+                                    className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-white text-gray-400 w-10 h-10 rounded-full shadow-md flex items-center justify-center z-20 hover:text-[#258FAF] transition-colors border border-gray-100"
                                 >
-                                    <i className="fas fa-chevron-left"></i> 一覧に戻る
+                                    <i className="fas fa-times text-lg"></i>
                                 </button>
                             )}
 
                             <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
                                 <div>
                                     <h2 className="text-3xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{currentData.word}</h2>
-                                    {currentData.pronunciation && (
-                                        <div className="mb-2">
-                                            <span className="text-xs md:text-sm text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded">
-                                                {currentData.pronunciation}
-                                            </span>
-                                        </div>
-                                    )}
+                                    {currentData.pronunciation && <div className="mb-2"><span className="text-xs md:text-sm text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded">{currentData.pronunciation}</span></div>}
                                     <p className="text-lg md:text-xl font-bold text-gray-700 mt-3">{currentData.translation}</p>
                                 </div>
                                 <div className="flex gap-3">
-                                    <button onClick={() => speak(currentData.word, currentData.audioUrl)} className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF]">
-                                        <i className="fas fa-volume-up"></i>
-                                    </button>
-                                    <button 
-                                        onClick={() => onSaveWord(currentData)} 
-                                        className={`neu-btn w-10 h-10 flex items-center justify-center rounded-full ${isSaved ? 'text-yellow-500 neu-pressed' : 'text-gray-400'}`}
-                                    >
-                                        <i className="fas fa-bookmark"></i>
-                                    </button>
+                                    <button onClick={() => speak(currentData.word, currentData.audioUrl)} className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF]"><i className="fas fa-volume-up"></i></button>
+                                    <button onClick={() => onSaveWord(currentData)} className={`neu-btn w-10 h-10 flex items-center justify-center rounded-full ${isSaved ? 'text-yellow-500 neu-pressed' : 'text-gray-400'}`}><i className="fas fa-bookmark"></i></button>
                                 </div>
                             </div>
-
                             <div className="space-y-8">
                                 {currentData.meanings && currentData.meanings.length > 0 ? (
                                     currentData.meanings.map((m, idx) => (
                                         <div key={idx} className="relative">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-md uppercase">
-                                                    {m.partOfSpeech.toUpperCase()} <span className="text-slate-400 font-normal">({getPartOfSpeechJa(m.partOfSpeech)})</span>
-                                                </span>
-                                            </div>
-                                            
-                                            {/* 複数の定義を表示 */}
+                                            <div className="flex items-center gap-2 mb-3"><span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-md uppercase">{m.partOfSpeech.toUpperCase()} <span className="text-slate-400 font-normal">({getPartOfSpeechJa(m.partOfSpeech)})</span></span></div>
                                             <div className="pl-2 border-l-2 border-[#258FAF]/30 space-y-6">
                                                 {m.definitions.map((def, dIdx) => (
                                                     <div key={dIdx}>
-                                                        <p className="text-gray-800 font-bold mb-1 leading-relaxed text-sm md:text-base">
-                                                            <span className="text-[#258FAF] mr-1">{dIdx + 1}.</span> {def.ja}
-                                                        </p>
-                                                        {def.en && <p className="text-xs text-gray-400 mb-2 pl-4">{def.en}</p>}
-                                                        {def.exEn && (
-                                                            <div className="neu-pressed p-3 rounded-lg mt-2 bg-[#F1F5F9] ml-2">
-                                                                <p className="text-sm text-[#258FAF] italic mb-1">"{def.exEn}"</p>
-                                                                {def.exJa && (
-                                                                    <p className="text-xs text-gray-500">{def.exJa}</p>
-                                                                )}
-                                                            </div>
-                                                        )}
+                                                        <p className="text-gray-800 font-bold mb-1 leading-relaxed text-sm md:text-base"><span className="text-[#258FAF] mr-1">{dIdx + 1}.</span> {def.ja}</p>
+                                                        <p className="text-xs text-gray-400 mb-2 pl-4">{def.en}</p>
+                                                        {def.exEn && <div className="neu-pressed p-3 rounded-lg mt-2 bg-[#F1F5F9] ml-2"><p className="text-sm text-[#258FAF] italic mb-1">"{def.exEn}"</p>{def.exJa && <p className="text-xs text-gray-500">{def.exJa}</p>}</div>}
                                                     </div>
                                                 ))}
                                             </div>
                                         </div>
                                     ))
-                                ) : (
-                                    <div className="text-center text-gray-400 text-sm">
-                                        詳細な定義はありません。<br/>
-                                        <span className="text-xs">翻訳: {currentData.translation}</span>
-                                    </div>
-                                )}
-
+                                ) : (<div className="text-center text-gray-400 text-sm">詳細な定義はありません。<br/><span className="text-xs">翻訳: {currentData.translation}</span></div>)}
                                 {currentData.synonyms && currentData.synonyms.length > 0 && (
                                     <div className="pt-4 border-t border-gray-100">
                                         <span className="text-xs font-bold text-gray-400 block mb-2">類義語 (Synonyms)</span>
-                                        <div className="flex flex-wrap gap-2">
-                                            {currentData.synonyms.slice(0,8).map((syn, i) => (
-                                                <span key={i} className="neu-pressed px-3 py-1 text-xs text-gray-500 rounded-lg">{syn}</span>
-                                            ))}
-                                        </div>
+                                        <div className="flex flex-wrap gap-2">{currentData.synonyms.slice(0,8).map((syn, i) => <span key={i} className="neu-pressed px-3 py-1 text-xs text-gray-500 rounded-lg">{syn}</span>)}</div>
                                     </div>
                                 )}
                             </div>
-                            
-                            {/* 詳細情報取得中のインジケータ */}
-                            {isEnriching && (
-                                <div className="flex justify-center mt-4">
-                                   <i className="fas fa-circle-notch fa-spin text-sm text-gray-300"></i>
-                                </div>
-                            )}
-
+                            {isEnriching && <div className="flex justify-center mt-4"><i className="fas fa-circle-notch fa-spin text-sm text-gray-300"></i></div>}
                             <div className="mt-8 pt-4 border-t border-gray-100 text-[10px] text-gray-400 text-center leading-relaxed">
                                 <p className="mb-1">Data Sources:</p>
-                                <p>
-                                    <a href="https://www.edrdg.org/jmdict/j_jmdict.html" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">JMdict (EDRDG)</a> via <a href="https://jisho.org/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Jisho.org</a>
-                                    {' & '}
-                                    <a href="https://en.wiktionary.org/wiki/Wiktionary:Main_Page" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Wiktionary</a> via <a href="https://dictionaryapi.dev/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Free Dictionary API</a>
-                                </p>
-                                <p className="mt-1">
-                                    Translations by <a href="https://lingva.ml/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Lingva</a>.
-                                </p>
-                                <p className="mt-1">
-                                    This data is available under the <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">CC BY-SA 3.0 license</a>.
-                                </p>
+                                <p><a href="https://www.edrdg.org/jmdict/j_jmdict.html" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">JMdict (EDRDG)</a> via <a href="https://jisho.org/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Jisho.org</a> & <a href="https://en.wiktionary.org/wiki/Wiktionary:Main_Page" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Wiktionary</a> via <a href="https://dictionaryapi.dev/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Free Dictionary API</a></p>
+                                <p className="mt-1">Translations by <a href="https://lingva.ml/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">Lingva</a>.</p>
+                                <p className="mt-1">This data is available under the <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">CC BY-SA 3.0 license</a>.</p>
                             </div>
                         </div>
                     )}
+                    
+                    {/* 修正: 右下フローティングボタン (z-index=60で手前に) */}
+                    {!isFromList && currentData && (
+                        <button
+                            onClick={() => { setExternalResult(null); setTerm(''); }}
+                            className="fixed bottom-[160px] right-4 w-14 h-14 bg-[#258FAF] text-white rounded-full shadow-lg flex items-center justify-center z-[60] hover:bg-[#1d6f8c] transition-transform active:scale-95"
+                        >
+                            <i className="fas fa-search text-xl"></i>
+                        </button>
+                    )}
+                    
+                    <div className="ad-slot mt-8 mx-auto w-full max-w-[320px] h-[50px] ad-slot flex items-center justify-center text-xs rounded">広告スペース</div>
                 </div>
             );
         };
 
         const ListView = ({ savedWords, onDeleteWord, onSelectWord }) => {
-            if (savedWords.length === 0) {
+            if (!savedWords || savedWords.length === 0) {
                 return (
                     <div className="text-center py-20 text-gray-400 fade-in">
-                        <div className="neu-pressed w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <i className="fas fa-book-open text-3xl"></i>
-                        </div>
+                        <div className="neu-pressed w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4"><i className="fas fa-book-open text-3xl"></i></div>
                         <p>保存された単語はありません</p>
                     </div>
                 );
@@ -767,28 +653,13 @@
                                     <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button 
-                                        className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] hover:text-[#1d6f8c] ml-2 shrink-0 relative z-10" 
-                                        onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            speak(item.word, item.audioUrl); 
-                                        }}
-                                    >
-                                        <i className="fas fa-volume-up"></i>
-                                    </button>
-                                    <button 
-                                        className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 ml-2 shrink-0 relative z-10" 
-                                        onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            onDeleteWord(item.word); 
-                                        }}
-                                    >
-                                        <i className="fas fa-trash"></i>
-                                    </button>
+                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] hover:text-[#1d6f8c] ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
+                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
                                 </div>
                             </div>
                         ))}
                     </div>
+                    <div className="ad-slot mt-8 mx-auto w-full max-w-[320px] h-[50px] ad-slot flex items-center justify-center text-xs rounded">広告スペース</div>
                 </div>
             );
         };
@@ -799,7 +670,9 @@
             const [index, setIndex] = useState(0);
             const [isFlipped, setIsFlipped] = useState(false);
             const [isExiting, setIsExiting] = useState(false);
+            const [isSwipeAction, setIsSwipeAction] = useState(null); // "clear" or "unclear"
             const touchStartX = useRef(null);
+            const cardRef = useRef(null);
 
             const startReview = () => {
                 if (savedWords.length === 0) return openAlert('単語帳が空です');
@@ -810,38 +683,61 @@
                 setIsStarted(true);
             };
 
-            const handleNext = (e) => {
-                if (e) e.stopPropagation();
-                if (index >= queue.length - 1) {
-                    openAlert('復習完了！お疲れ様でした。');
-                    onFinish();
-                } else {
-                    setIsExiting(true);
-                    setTimeout(() => {
-                        setIsFlipped(false);
-                        setIndex(prev => prev + 1);
-                        setIsExiting(false);
-                    }, 250); 
+            const handleNext = (isClear) => {
+                if (!isClear) {
+                    setQueue(prev => {
+                        const current = prev[index];
+                        return [...prev, current];
+                    });
                 }
+                setIsExiting(true);
+                setTimeout(() => {
+                    setIsFlipped(false);
+                    setIndex(prev => prev + 1);
+                    setIsExiting(false);
+                    setIsSwipeAction(null);
+                    if (cardRef.current) cardRef.current.style.transform = ''; // Reset transform
+                }, 250);
             };
 
+            useEffect(() => {
+               if (isStarted && index >= queue.length) {
+                   openAlert('復習完了！お疲れ様でした。');
+                   onFinish();
+               }
+            }, [index, queue.length, isStarted]);
+
             const toggleFlip = () => {
-                if (!isFlipped) {
-                    speak(queue[index].word, queue[index].audioUrl);
-                }
+                if (!isFlipped) speak(queue[index].word, queue[index].audioUrl);
                 setIsFlipped(!isFlipped);
             };
 
-            const onTouchStart = (e) => {
-                touchStartX.current = e.touches[0].clientX;
+            const onTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
+            
+            const onTouchMove = (e) => {
+                if (!touchStartX.current || !cardRef.current || isExiting) return;
+                const currentX = e.touches[0].clientX;
+                const diff = currentX - touchStartX.current;
+                const rotate = diff * 0.05;
+                
+                cardRef.current.style.transform = `translateX(${diff}px) rotate(${rotate}deg)`;
+                
+                if (diff > 50) setIsSwipeAction('clear');
+                else if (diff < -50) setIsSwipeAction('unclear');
+                else setIsSwipeAction(null);
             };
 
             const onTouchEnd = (e) => {
-                if (touchStartX.current === null) return;
+                if (!touchStartX.current || !cardRef.current) return;
                 const touchEndX = e.changedTouches[0].clientX;
                 const distance = touchStartX.current - touchEndX;
-                if (distance > 50) {
-                    handleNext();
+                
+                if (Math.abs(distance) > 100) { 
+                    if (distance > 0) handleNext(false); // Left -> Unclear
+                    else handleNext(true); // Right -> Clear
+                } else {
+                    cardRef.current.style.transform = '';
+                    setIsSwipeAction(null);
                 }
                 touchStartX.current = null;
             };
@@ -849,55 +745,50 @@
             if (!isStarted) {
                 return (
                     <div className="h-full flex flex-col justify-center items-center text-center fade-in">
-                        <div className="neu-flat w-40 h-40 rounded-full flex items-center justify-center mb-8 text-[#258FAF]">
-                            <i className="fas fa-graduation-cap text-6xl"></i>
-                        </div>
+                        <div className="neu-flat w-40 h-40 rounded-full flex items-center justify-center mb-8 text-[#258FAF]"><i className="fas fa-graduation-cap text-6xl"></i></div>
                         <h2 className="text-2xl font-bold mb-2 text-[#258FAF]">Review Mode</h2>
                         <p className="text-gray-500 mb-10 text-sm">保存した単語からランダムに出題</p>
-                        <button onClick={startReview} className="bg-[#258FAF] text-white px-10 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">
-                            テストを開始
-                        </button>
+                        <button onClick={startReview} className="bg-[#258FAF] text-white px-10 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">テストを開始</button>
                     </div>
                 );
             }
 
             const currentCard = queue[index];
+            if (!currentCard) return null;
 
             return (
-                <div className="h-full flex flex-col items-center justify-center pb-4 relative fade-in">
+                <div className="h-full flex flex-col items-center justify-center pb-4 relative fade-in overflow-hidden">
                     <div 
+                        ref={cardRef}
                         className={`w-full max-w-sm h-[420px] card-flip cursor-pointer ${isFlipped ? 'flipped' : ''} ${isExiting ? 'slide-out-left' : 'slide-in-right'}`} 
                         onClick={toggleFlip}
                         onTouchStart={onTouchStart}
+                        onTouchMove={onTouchMove}
                         onTouchEnd={onTouchEnd}
                         key={index}
                     >
                         <div className="card-inner">
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
-                                
-                                {/* コンテンツ中央配置 */}
                                 <div className="flex-1 flex flex-col justify-center items-center w-full">
                                     <h2 className="text-4xl font-bold text-[#258FAF] break-all">{currentCard.word}</h2>
-                                    
-                                    {/* スピーカーボタン */}
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} 
-                                        className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8"
-                                    >
+                                    <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
                                         <i className="fas fa-volume-up"></i>
                                     </button>
                                 </div>
+                                
+                                {/* Swipe Feedback Stamps (Revised Colors) */}
+                                {isSwipeAction === 'clear' && (
+                                    <div className="absolute top-10 right-10 border-4 border-[#258FAF] text-[#258FAF] font-black text-2xl p-2 rounded transform rotate-12 opacity-80 pointer-events-none">CLEAR</div>
+                                )}
+                                {isSwipeAction === 'unclear' && (
+                                    <div className="absolute top-10 left-10 border-4 border-gray-400 text-gray-400 font-black text-2xl p-2 rounded transform -rotate-12 opacity-80 pointer-events-none">UNCLEAR</div>
+                                )}
 
-                                {/* 下部ガイド */}
                                 <div className="absolute bottom-6 w-full flex flex-col items-center gap-2">
                                     <p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p>
-                                    
-                                    {/* 4. スマホ用スワイプガイドをアイコンアニメーションに変更 */}
-                                    <div className="md:hidden text-gray-300 animate-swipe-icon flex items-center mt-1">
-                                        <i className="fas fa-hand-pointer text-xl rotate-90 mr-2"></i>
-                                        <i className="fas fa-chevron-left text-sm"></i>
-                                        <span className="text-[10px] ml-1">Next</span>
+                                    <div className="md:hidden text-gray-300 animate-swipe-icon flex items-center mt-1 gap-4">
+                                        <i className="fas fa-hand-pointer text-xl rotate-[-45deg]"></i>
                                     </div>
                                 </div>
                             </div>
@@ -906,7 +797,6 @@
                                 <span className="absolute top-6 left-6 text-xs font-bold text-[#258FAF]">ANSWER</span>
                                 <h3 className="text-2xl font-bold text-gray-700 mb-4">{currentCard.translation}</h3>
                                 <div className="w-full overflow-y-auto max-h-32 text-sm text-gray-500 mb-4 px-4 space-y-2">
-                                    {/* 復習モードでは代表的な意味を表示 */}
                                     {currentCard.meanings && currentCard.meanings.length > 0 
                                         ? currentCard.meanings.map((m, i) => (
                                             <p key={i}><span className="font-bold">{m.partOfSpeech} ({getPartOfSpeechJa(m.partOfSpeech)}):</span> {m.definitions[0].ja}</p>
@@ -920,10 +810,11 @@
                             </div>
                         </div>
                     </div>
-                    <div className="w-full max-w-sm mt-4 md:mt-8 slide-in">
-                        <button onClick={handleNext} className="w-full bg-[#258FAF] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">
-                            次の単語へ <i className="fas fa-chevron-right"></i>
-                        </button>
+                    
+                    {/* 修正: ボタン色をテーマカラー(Blue)に合わせ、アイコンを◯✕に */}
+                    <div className="w-full max-w-sm mt-4 md:mt-8 flex gap-4">
+                        <button onClick={() => handleNext(false)} className="flex-1 bg-slate-200 text-slate-600 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="fas fa-times"></i> Unclear</button>
+                        <button onClick={() => handleNext(true)} className="flex-1 bg-[#258FAF] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="far fa-circle"></i> Clear</button>
                     </div>
                 </div>
             );
@@ -939,12 +830,9 @@
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isFromList, setIsFromList] = useState(false);
             
-            // Dialog State
             const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
-            
             const [user, setUser] = useState(null);
 
-            // Dialog Helper
             const openAlert = (msg) => setDialog({ isOpen: true, type: 'alert', message: msg, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
             const openConfirm = (msg, onConfirm) => setDialog({ isOpen: true, type: 'confirm', message: msg, onConfirm: () => { onConfirm(); setDialog(prev => ({ ...prev, isOpen: false })); } });
 
@@ -1000,6 +888,10 @@
                 });
             };
 
+            const handleUpdateWord = (wordData) => {
+                setSavedWords(prev => prev.map(w => w.word === wordData.word ? { ...w, ...wordData } : w));
+            };
+
             const handleSaveWord = (wordData) => {
                 const exists = savedWords.some(w => w.word === wordData.word);
                 if (exists) {
@@ -1028,6 +920,10 @@
                 setSearchResult(null);
                 setIsFromList(false);
                 setSearchViewKey(prev => prev + 1); 
+                
+                // Reset scroll of main
+                const mainEl = document.querySelector('main');
+                if (mainEl) mainEl.scrollTop = 0;
             };
 
             const handleBack = () => {
@@ -1080,16 +976,14 @@
                         className="p-4 z-50 flex justify-between items-center h-16 neu-flat mx-4 mt-4 mb-2 relative cursor-pointer hover:opacity-80 transition-opacity"
                     >
                         <div className="flex-1 flex justify-center items-center" onClick={resetToHome}>
-                            {/* LOGO IMAGE PLACEHOLDER: 下のh1タグをimgタグに置き換えてください */}
-                            {/* <img src="wordloop-top.svg" alt="Wordloop" className="h-8" /> */}
-                            <h1 className="text-xl font-bold tracking-tight text-[#258FAF]">Wordloop</h1>
+                            <img src="wordloop-top.svg" alt="Wordloop" className="h-8" />
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} className="absolute right-4 text-gray-400 hover:text-[#258FAF]">
                             <i className="fas fa-cog"></i>
                         </button>
                     </header>
 
-                    <main className="flex-1 overflow-y-auto p-4 pb-24 no-scrollbar relative z-0">
+                    <main className="flex-1 overflow-y-auto p-4 pb-24 no-scrollbar relative z-0 main-with-ad">
                         {tab === 'search' && (
                             <SearchView 
                                 key={searchViewKey} 
@@ -1101,6 +995,7 @@
                                 isFromList={isFromList}
                                 onBack={handleBack}
                                 openAlert={openAlert}
+                                onUpdateWord={handleUpdateWord}
                             />
                         )}
                         {tab === 'list' && (
@@ -1137,9 +1032,14 @@
                         onCancel={() => setDialog(prev => ({ ...prev, isOpen: false }))}
                     />
 
+                    {/* Footer Ad */}
+                    <div className="ad-footer-space ad-slot">
+                        <p>広告スペース</p>
+                    </div>
+
                     {/* ナビゲーション: 固定配置 */}
-                    <nav className="neu-flat mx-4 mb-4 h-20 flex justify-around items-center z-50 fixed bottom-0 left-0 right-0 bg-[#F8FAFC]">
-                        <button onClick={() => setTab('search')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'search' ? 'tab-active' : 'tab-inactive'}`}>
+                    <nav className="neu-flat mx-4 h-20 flex justify-around items-center z-50 fixed left-0 right-0 bg-[#F8FAFC] nav-with-ad">
+                        <button onClick={() => resetToHome()} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'search' ? 'tab-active' : 'tab-inactive'}`}>
                             <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'search' ? 'neu-pressed' : ''}`}>
                                 <i className="fas fa-search text-lg"></i>
                             </div>
@@ -1147,7 +1047,7 @@
                         </button>
                         <button onClick={() => setTab('review')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'review' ? 'tab-active' : 'tab-inactive'}`}>
                             <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'review' ? 'neu-pressed' : ''}`}>
-                                <i className="fas fa-brain text-lg"></i>
+                                <i className="fas fa-graduation-cap text-lg"></i>
                             </div>
                             <span className="text-[10px] font-bold">復習</span>
                         </button>
