@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Wordloop - シンプルな英単語帳</title>
+    <title>Wordrobe - シンプルな英単語帳</title>
     
     <!-- Icon & OGP Settings -->
-    <link rel="apple-touch-icon" href="wordloop-icon.svg">
-    <link rel="icon" type="image/svg+xml" href="wordloop-icon.svg">
+    <link rel="apple-touch-icon" href="sanpo/wordrobe/images/wordrobe-icon.svg">
+    <link rel="icon" type="image/svg+xml" href="sanpo/wordrobe/images/wordrobe-icon.svg">
     <meta property="og:title" content="Wordloop">
     <meta property="og:description" content="シンプルな英単語帳">
-    <meta property="og:image" content="wordloop-ogp.svg">
+    <meta property="og:image" content="https://conizm3.github.io/sanpo/wordrobe/images/wordrobe-ogp.png">
     
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -115,42 +115,23 @@
             to { opacity: 0; transform: translateX(50px); } 
         }
         
-        /* Swipe Hint Animation (Icon) - Slide Left/Right Slower */
-        .animate-slide-hand-slow {
-            animation: slideHandSlow 3s infinite ease-in-out;
+        /* Flow Animation for Arrows (Outward) */
+        .animate-flow-out-left {
+            animation: flowOutLeft 1.5s infinite;
         }
-        @keyframes slideHandSlow {
-            0% { transform: translateX(0); }
-            25% { transform: translateX(-15px); } /* Left */
-            50% { transform: translateX(0); }
-            75% { transform: translateX(15px); } /* Right */
-            100% { transform: translateX(0); }
-        }
-
-        /* Flow Animation for Arrows */
-        .animate-flow-left {
-            animation: flowLeft 1.5s infinite;
-        }
-        @keyframes flowLeft {
-            0% { opacity: 0; transform: translateX(10px); }
-            50% { opacity: 1; transform: translateX(0); }
+        @keyframes flowOutLeft {
+            0% { opacity: 0; transform: translateX(5px); }
+            20% { opacity: 1; }
             100% { opacity: 0; transform: translateX(-10px); }
         }
-        .animate-flow-right {
-            animation: flowRight 1.5s infinite;
+        .animate-flow-out-right {
+            animation: flowOutRight 1.5s infinite;
         }
-        @keyframes flowRight {
-            0% { opacity: 0; transform: translateX(-10px); }
-            50% { opacity: 1; transform: translateX(0); }
+        @keyframes flowOutRight {
+            0% { opacity: 0; transform: translateX(-5px); }
+            20% { opacity: 1; }
             100% { opacity: 0; transform: translateX(10px); }
         }
-        
-        /* Flow Animation for X and O */
-        .animate-flow-x { animation: flowX 1.5s infinite; }
-        @keyframes flowX { 0% { opacity: 0; transform: translateX(10px); } 50% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(-10px); } }
-        
-        .animate-flow-o { animation: flowO 1.5s infinite; }
-        @keyframes flowO { 0% { opacity: 0; transform: translateX(-10px); } 50% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(10px); } }
 
         /* Card Flip Fixed */
         .card-flip { perspective: 1000px; }
@@ -292,18 +273,7 @@
             const isJp = isJapanese(term);
             const langPair = isJp ? "ja|en" : "en|ja";
             
-            const promises = [translateText(term, langPair)];
-            if (!isJp) {
-                if (!term.trim().includes(' ')) {
-                    promises.push(fetchFreeDictData(term));
-                }
-            }
-
-            const [trans, freeDictResult] = await Promise.all(promises);
-
-            if (!isJp && !term.trim().includes(' ') && (!freeDictResult || freeDictResult.length === 0 || (freeDictResult.title && freeDictResult.title === "No Definitions Found"))) {
-                throw new Error("NOT_FOUND");
-            }
+            const trans = await translateText(term, langPair);
             
             if (!trans) throw new Error("Translation failed");
 
@@ -547,6 +517,7 @@
                 try {
                     const coreData = await fetchRichData(term);
                     
+                    // 修正: 確報取得時点でDB更新
                     onUpdateWord(coreData);
 
                     if (isMounted.current && currentId === searchIdRef.current) {
@@ -555,6 +526,7 @@
                         setLoading(false);
 
                         fetchEnrichment(coreData, term).then(enriched => {
+                            // 修正: 詳細データ取得時もDB更新
                             if (enriched) {
                                 onUpdateWord(enriched);
                             }
@@ -565,6 +537,7 @@
                              if (isMounted.current && currentId === searchIdRef.current) setIsEnriching(false); 
                         });
                     } else {
+                        // 修正: 画面から離れていても詳細取得を継続しDB更新
                          fetchEnrichment(coreData, term).then(enriched => {
                             if (enriched) {
                                 onUpdateWord(enriched);
@@ -677,15 +650,7 @@
                     
                     {!isFromList && currentData && (
                         <button
-                            onClick={() => { 
-                                searchIdRef.current++; 
-                                setExternalResult(null); 
-                                setTerm(''); 
-                                setLoading(false);
-                                setIsEnriching(false);
-                                const mainEl = document.querySelector('main');
-                                if (mainEl) mainEl.scrollTop = 0;
-                            }}
+                            onClick={resetToHome}
                             className="fixed bottom-[160px] right-4 w-14 h-14 bg-[#258FAF] text-white rounded-full shadow-lg flex items-center justify-center z-[60] hover:bg-[#1d6f8c] transition-transform active:scale-95"
                         >
                             <i className="fas fa-search text-xl"></i>
@@ -760,7 +725,7 @@
                     setIndex(prev => prev + 1);
                     setIsExiting(false);
                     setIsSwipeAction(null);
-                    if (cardRef.current) cardRef.current.style.transform = ''; // Reset transform
+                    if (cardRef.current) cardRef.current.style.transform = ''; 
                 }, 250);
             };
 
@@ -844,7 +809,7 @@
                                     </button>
                                 </div>
                                 
-                                {/* Swipe Feedback Stamps (Revised Colors) */}
+                                {/* Swipe Feedback Stamps */}
                                 {isSwipeAction === 'clear' && (
                                     <div className="absolute top-10 right-10 border-4 border-[#258FAF] text-[#258FAF] font-black text-2xl p-2 rounded transform rotate-12 opacity-80 pointer-events-none">CLEAR</div>
                                 )}
@@ -854,16 +819,17 @@
 
                                 <div className="absolute bottom-6 w-full flex flex-col items-center gap-2">
                                     <p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p>
+                                    
                                     {/* 修正: ガイドUI (✕ < 👆 > ◯) */}
                                     <div className="md:hidden text-gray-300 flex items-center mt-1 gap-2 w-full justify-center px-4">
-                                        <span className="text-lg font-bold text-gray-400 opacity-80 animate-flow-x">✕</span>
-                                        <i className="fas fa-chevron-left animate-flow-right opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-gray-400 opacity-80">✕　</span>
+                                        <i className="fas fa-chevron-left animate-flow-out-left opacity-50 text-xs"></i>
                                         <div className="mx-2 flex flex-col items-center">
-                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80"></i>
+                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80 animate-slide-hand-slow"></i>
                                             <span className="text-[8px] text-gray-400 mt-1">swipe</span>
                                         </div>
-                                        <i className="fas fa-chevron-right animate-flow-left opacity-50 text-xs"></i>
-                                        <span className="text-lg font-bold text-[#258FAF] opacity-80 animate-flow-o">◯</span>
+                                        <i className="fas fa-chevron-right animate-flow-out-right opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-[#258FAF] opacity-80">　◯</span>
                                     </div>
                                 </div>
                             </div>
@@ -882,18 +848,17 @@
                                 <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full mt-2 text-[#258FAF]">
                                     <i className="fas fa-volume-up"></i>
                                 </button>
-                                
-                                {/* 裏面にもスワイプガイドを表示 */}
+                                {/* 裏面ガイド */}
                                 <div className="absolute bottom-6 w-full flex flex-col items-center gap-2 md:hidden">
                                     <div className="text-gray-300 flex items-center mt-1 gap-2 w-full justify-center px-4">
-                                        <span className="text-lg font-bold text-gray-400 opacity-80 animate-flow-x">✕</span>
-                                        <i className="fas fa-chevron-left animate-flow-right opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-gray-400 opacity-80">✕</span>
+                                        <i className="fas fa-chevron-left animate-flow-out-left opacity-50 text-xs"></i>
                                         <div className="mx-2 flex flex-col items-center">
-                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80"></i>
+                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80 animate-slide-hand-slow"></i>
                                             <span className="text-[8px] text-gray-400 mt-1">swipe</span>
                                         </div>
-                                        <i className="fas fa-chevron-right animate-flow-left opacity-50 text-xs"></i>
-                                        <span className="text-lg font-bold text-[#258FAF] opacity-80 animate-flow-o">◯</span>
+                                        <i className="fas fa-chevron-right animate-flow-out-right opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-[#258FAF] opacity-80">◯</span>
                                     </div>
                                 </div>
                             </div>
@@ -986,8 +951,6 @@
                 try {
                     const wordInDb = await db.words.where('word').equals(wordData.word).first();
                     if (wordInDb) {
-                         // id以外のフィールドを更新（IDはそのまま）
-                         // 念の為、IDを除外したオブジェクトを作成
                         const { id, ...updates } = wordData;
                         await db.words.update(wordInDb.id, updates);
                     }
@@ -1000,16 +963,13 @@
                 try {
                     const exists = savedWords.some(w => w.word === wordData.word);
                     if (exists) {
-                        // Remove from DB & State
                         const wordToDelete = savedWords.find(w => w.word === wordData.word);
-                        // DBから削除（以前のコードでIDを持っていない可能性もあるので、wordで再検索して削除）
                          const wordInDb = await db.words.where('word').equals(wordData.word).first();
                          if(wordInDb) await db.words.delete(wordInDb.id);
 
                         setSavedWords(prev => prev.filter(w => w.word !== wordData.word));
                         showToast('削除しました');
                     } else {
-                        // Add to DB & State
                         const newWord = { 
                             ...wordData, 
                             addedAt: Date.now(),
