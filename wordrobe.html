@@ -263,11 +263,11 @@
         };
 
         // --- API Functions ---
-        // 修正: 安定性を最優先し、allorigins.winのみを使用する構成に戻しました。
-        const fetchJishoData = async (term) => {
+const fetchJishoData = async (term) => {
             try {
+                // ▼▼▼ 変更点: corsproxy.io を使用 ▼▼▼
                 const targetUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`;
-                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
+                const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(targetUrl)}`);
                 
                 if (!res.ok) return null;
                 return await res.json();
