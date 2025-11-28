@@ -264,14 +264,18 @@
 
         // --- API Functions ---
 
-        const fetchJishoData = async (term) => {
-            try {
-                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
-                
-                if (!res.ok) return null;
-                return await res.json();
-            } catch (e) { return null; }
-        };
+const fetchJishoData = async (term) => {
+    try {
+        // あなたのWorkers URL
+        const workerUrl = "https://curly-math-7d23.shimz777.workers.dev/"; 
+        
+        // Workers側で ?keyword=... を受け取る仕様にしたので、この書き方でOKです
+        const res = await fetch(`${workerUrl}?keyword=${encodeURIComponent(term)}`);
+        
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (e) { return null; }
+};
 
         const fetchFreeDictData = async (term) => {
             try {
