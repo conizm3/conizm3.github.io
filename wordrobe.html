@@ -39,7 +39,6 @@
             --accent: #258FAF;
             --shadow-light: #FFFFFF;
             --shadow-dark: #E6EFF5;
-            --ad-height: 0px;
             --safe-top: env(safe-area-inset-top, 20px);
             --safe-bottom: env(safe-area-inset-bottom, 20px);
         }
@@ -50,22 +49,15 @@
             color: var(--text-main);
             -webkit-tap-highlight-color: transparent;
             overscroll-behavior-y: none;
-            
-            /* アプリ全体の選択を無効化 */
             -webkit-user-select: none;
             user-select: none;
-            
             touch-action: manipulation;
         }
 
-        /* 修正: 入力フォームのみ選択・操作を「許可」する */
         input, textarea {
             font-size: 16px !important;
-            
-            /* ここで上書きして有効にします */
             -webkit-user-select: text !important;
             user-select: text !important;
-            
             pointer-events: auto !important;
             transform: translate3d(0,0,0);
         }
@@ -78,7 +70,6 @@
             flex-direction: column;
         }
 
-        /* Header */
         header.custom-header {
             width: 100%;
             margin: 0 !important;
@@ -97,7 +88,6 @@
             box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
         }
 
-        /* Nav */
         nav.custom-nav {
             position: fixed;
             bottom: 0;
@@ -117,7 +107,6 @@
             margin: 0 !important;
         }
 
-        /* Main Content */
         main.custom-main {
             flex: 1;
             overflow-y: auto;
@@ -127,7 +116,6 @@
             z-index: 0;
         }
 
-        /* Utilities & Animations */
         .neu-flat {
             background: var(--bg-color);
             box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
@@ -180,57 +168,4 @@
         @keyframes slideOutRight { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(50px); } }
         
         .animate-flow-out-left { animation: flowOutLeft 1.5s infinite; }
-        @keyframes flowOutLeft { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(-10px); } }
-        .animate-flow-out-right { animation: flowOutRight 1.5s infinite; }
-        @keyframes flowOutRight { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(10px); } }
-
-        .card-flip { perspective: 1000px; }
-        .card-inner { 
-            transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1); 
-            transform-style: preserve-3d; 
-            position: relative; 
-            width: 100%; 
-            height: 100%; 
-            transform-origin: center center;
-        }
-        .card-front, .card-back { 
-            backface-visibility: hidden; 
-            -webkit-backface-visibility: hidden; 
-            position: absolute; 
-            width: 100%; 
-            height: 100%; 
-            top: 0; 
-            left: 0;
-        }
-        .card-back { transform: rotateY(180deg); }
-        .flipped .card-inner { transform: rotateY(180deg); }
-
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-
-    <script type="text/babel">
-        // --- 1. Firebase Config & Init ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyCqoqNq7N-x5Wr6TsJkyCU0J6o-Mj1Ir8g",
-            authDomain: "conizm-01.firebaseapp.com",
-            projectId: "conizm-01",
-            storageBucket: "conizm-01.firebasestorage.app",
-            messagingSenderId: "180210157068",
-            appId: "1:180210157068:web:e03a373dd3f818cdee1029",
-            measurementId: "G-YD40SF3F32"
-        };
-
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
-        const db_firebase = firebase.firestore();
-        const auth = firebase.auth();
-        const analytics = firebase.analytics();
-
-        // --- DB Setup (Dexie.js) ---
-        const db = new Dexie('WordloopDB');
-        db.version(1).stores({
+        @keyframes flowOutLeft { 0% {
