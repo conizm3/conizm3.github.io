@@ -566,8 +566,8 @@
                                     </button>
                                 </div>
                                 <div className="mt-3 flex justify-end items-center gap-4">
-                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] underline hover:text-[#1d6f8c] flex items-center gap-1">
-                                        <i className="fas fa-key"></i> APIキー取得
+                                    <i className="fas fa-key"></i><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] underline hover:text-[#1d6f8c] flex items-center gap-1">
+                                         APIキー取得
                                     </a>
                                     <button onClick={handleTestConnection} className="text-xs text-[#258FAF] underline hover:text-[#1d6f8c]">
                                         {testStatus === 'testing' ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-plug"></i>} 接続テスト
