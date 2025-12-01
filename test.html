@@ -183,6 +183,7 @@
         .animate-flow-out-right { animation: flowOutRight 1.5s infinite; }
         @keyframes flowOutRight { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(10px); } }
 
+        /* 追加: スマホ用ガイドのアニメーション */
         .animate-flow-x { animation: flowX 2s infinite; }
         @keyframes flowX { 0%, 100% { opacity: 0.8; transform: translateX(0); } 50% { opacity: 0.4; transform: translateX(-5px); } }
         
@@ -937,7 +938,21 @@
                                 <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
                                 {isSwipeAction === 'clear' && <div className="absolute top-10 right-10 border-4 border-[#258FAF] text-[#258FAF] font-black text-2xl p-2 rounded transform rotate-12 opacity-80 pointer-events-none">CLEAR</div>}
                                 {isSwipeAction === 'unclear' && <div className="absolute top-10 left-10 border-4 border-gray-400 text-gray-400 font-black text-2xl p-2 rounded transform -rotate-12 opacity-80 pointer-events-none">UNCLEAR</div>}
-                                <div className="absolute bottom-6 w-full flex flex-col items-center gap-2"><p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p></div>
+                                
+                                <div className="absolute bottom-6 w-full flex flex-col items-center gap-2">
+                                    <p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p>
+                                    {/* 修正: スマホ用ガイドを追加 */}
+                                    <div className="md:hidden text-gray-300 flex items-center mt-1 gap-2 w-full justify-center px-4">
+                                        <span className="text-lg font-bold text-gray-400 opacity-80 animate-flow-x">✕　</span>
+                                        <i className="fas fa-chevron-left animate-flow-out-left opacity-50 text-xs"></i>
+                                        <div className="mx-2 flex flex-col items-center">
+                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80 animate-slide-hand-slow"></i>
+                                            <span className="text-[8px] text-gray-400 mt-1">swipe</span>
+                                        </div>
+                                        <i className="fas fa-chevron-right animate-flow-out-right opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-[#258FAF] opacity-80 animate-flow-o">　◯</span>
+                                    </div>
+                                </div>
                             </div>
                             <div className="card-back neu-flat flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-[#F8FAFC] to-white">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-[#258FAF]">ANSWER</span>
@@ -947,6 +962,11 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                    
+                    <div className="w-full max-w-sm mt-4 md:mt-8 flex gap-4 hidden md:flex">
+                        <button onClick={() => handleNext(false)} className="flex-1 bg-slate-200 text-slate-600 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="fas fa-times"></i> Unclear</button>
+                        <button onClick={() => handleNext(true)} className="flex-1 bg-[#258FAF] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="far fa-circle"></i> Clear</button>
                     </div>
                 </div>
             );
