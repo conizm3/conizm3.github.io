@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9941600818813301" crossorigin="anonymous"></script>
-    
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>wordrobe</title>
     
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="wordrobe">
     <link rel="manifest" href="./manifest.json">
@@ -19,10 +17,9 @@
     <meta property="og:image" content="https://conizm3.github.io/wordrobe/images/wordrobe-ogp.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
     <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
 
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -53,6 +50,19 @@
             -webkit-user-select: none;
             user-select: none;
             touch-action: manipulation;
+        }
+
+        /* エラー表示用のスタイル */
+        #error-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            z-index: 9999;
+            padding: 20px;
+            color: #ef4444;
+            font-family: monospace;
+            overflow: auto;
         }
 
         input, textarea {
@@ -159,4 +169,153 @@
             transform: translate(-50%, 0);
         }
         
-        .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2,
+        .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
+        
+        .slide-out-left { animation: slideOutLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        @keyframes slideOutLeft { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(-50px); } }
+
+        .slide-out-right { animation: slideOutRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        @keyframes slideOutRight { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(50px); } }
+        
+        .animate-flow-out-left { animation: flowOutLeft 1.5s infinite; }
+        @keyframes flowOutLeft { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(-10px); } }
+        .animate-flow-out-right { animation: flowOutRight 1.5s infinite; }
+        @keyframes flowOutRight { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(10px); } }
+
+        .animate-flow-x { animation: flowX 2s infinite; }
+        @keyframes flowX { 0%, 100% { opacity: 0.8; transform: translateX(0); } 50% { opacity: 0.4; transform: translateX(-5px); } }
+        
+        .animate-flow-o { animation: flowO 2s infinite; }
+        @keyframes flowO { 0%, 100% { opacity: 0.8; transform: translateX(0); } 50% { opacity: 0.4; transform: translateX(5px); } }
+
+        .animate-slide-hand-slow { animation: slideHand 2s ease-in-out infinite; }
+        @keyframes slideHand { 
+            0% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-15px) rotate(-10deg); }
+            75% { transform: translateX(15px) rotate(10deg); }
+            100% { transform: translateX(0) rotate(0deg); }
+        }
+
+        .card-flip { perspective: 1000px; }
+        .card-inner { 
+            transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1); 
+            transform-style: preserve-3d; 
+            position: relative; 
+            width: 100%; 
+            height: 100%; 
+            transform-origin: center center;
+        }
+        .card-front, .card-back { 
+            backface-visibility: hidden; 
+            -webkit-backface-visibility: hidden; 
+            position: absolute; 
+            width: 100%; 
+            height: 100%; 
+            top: 0; 
+            left: 0;
+        }
+        .card-back { transform: rotateY(180deg); }
+        .flipped .card-inner { transform: rotateY(180deg); }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body>
+    <div id="error-overlay">
+        <h3 style="font-size: 1.2rem; margin-bottom: 1rem; border-bottom: 2px solid #ef4444; padding-bottom: 0.5rem;">⚠️ 起動エラーが発生しました</h3>
+        <p id="error-message"></p>
+        <p style="margin-top: 1rem; color: #666; font-size: 0.9rem;">この画面をスクリーンショットして管理者に報告するか、ページをリロードしてください。</p>
+    </div>
+
+    <div id="root"></div>
+
+    <script>
+        // グローバルエラーハンドリング
+        window.onerror = function(message, source, lineno, colno, error) {
+            const overlay = document.getElementById('error-overlay');
+            const msgEl = document.getElementById('error-message');
+            if (overlay && msgEl) {
+                overlay.style.display = 'block';
+                msgEl.innerText = `Error: ${message}\nAt: ${source}:${lineno}:${colno}\n\n${error ? error.stack : ''}`;
+            }
+        };
+    </script>
+
+    <script type="text/babel">
+        // --- 安全な初期化処理 ---
+        
+        // Firebaseの初期化（エラーがあってもアプリを止めない）
+        let db_firebase = null;
+        let auth = null;
+        let analytics = null;
+        const isFirebaseAvailable = typeof firebase !== 'undefined';
+
+        if (isFirebaseAvailable) {
+            try {
+                const firebaseConfig = {
+                    apiKey: "AIzaSyCqoqNq7N-x5Wr6TsJkyCU0J6o-Mj1Ir8g",
+                    authDomain: "conizm-01.firebaseapp.com",
+                    projectId: "conizm-01",
+                    storageBucket: "conizm-01.firebasestorage.app",
+                    messagingSenderId: "180210157068",
+                    appId: "1:180210157068:web:e03a373dd3f818cdee1029",
+                    measurementId: "G-YD40SF3F32"
+                };
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                db_firebase = firebase.firestore();
+                auth = firebase.auth();
+                analytics = firebase.analytics();
+            } catch (e) {
+                console.warn("Firebase Init Error:", e);
+                // Firebaseが使えなくてもローカルモードで動くようにスルーする
+            }
+        } else {
+            console.warn("Firebase SDK not loaded. Running in offline mode.");
+        }
+
+        // Dexie (Local DB) Setup
+        if (typeof Dexie === 'undefined') {
+            throw new Error("Dexie.js library failed to load.");
+        }
+        const db = new Dexie('WordloopDB');
+        db.version(1).stores({
+            words: '++id, word, nextReview, interval, repetition, efactor, addedAt'
+        });
+
+        // React Setup
+        if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+            throw new Error("React library failed to load.");
+        }
+        const { useState, useEffect, useRef } = React;
+
+        // --- 2. Helper Functions ---
+        const translateText = async (text, langPair = "en|ja") => {
+            if (!text) return "";
+            const [source, target] = langPair.split('|');
+            try {
+                const res = await fetch(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`);
+                if (!res.ok) return text;
+                const data = await res.json();
+                return data.translation;
+            } catch (e) {
+                console.warn("Translation failed", e);
+                return text; 
+            }
+        };
+
+        const isJapanese = (text) => /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
+
+        const getPartOfSpeechJa = (text) => {
+            const map = {
+                noun: "名詞", verb: "動詞", adjective: "形容詞", adverb: "副詞",
+                pronoun: "代名詞", preposition: "前置詞", conjunction: "接続詞",
+                interjection: "間投詞", article: "冠詞", determiner: "限定詞",
+                "transitive verb": "他動詞", "intransitive verb": "自動詞",
+                "suru verb": "スル動詞", "translation": "翻訳", "common": "一般"
+            };
+            return text.split(/,\s*/).map(p => {
+                const lower =
