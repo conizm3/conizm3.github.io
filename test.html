@@ -52,6 +52,12 @@
             touch-action: manipulation;
         }
 
+        /* 検索結果のテキスト選択を許可するクラス */
+        .allow-select {
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+
         #error-overlay {
             display: none;
             position: fixed;
@@ -303,6 +309,7 @@
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
 
+            // AI Tips プロンプト変更
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
             "definition": 定義（日本語で簡潔に、10〜20語程度で）
@@ -566,11 +573,12 @@
                                     </button>
                                 </div>
                                 <div className="mt-3 flex justify-end items-center gap-4">
-                                    <i className="fas fa-key"></i><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] underline hover:text-[#1d6f8c] flex items-center gap-1">
-                                         APIキー取得
+                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] hover:text-[#1d6f8c] flex items-center gap-1">
+                                        <i className="fas fa-key"></i> <span className="underline">APIキー取得</span>
                                     </a>
-                                    <button onClick={handleTestConnection} className="text-xs text-[#258FAF] underline hover:text-[#1d6f8c]">
-                                        {testStatus === 'testing' ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-plug"></i>} 接続テスト
+                                    <button onClick={handleTestConnection} className="text-xs text-[#258FAF] hover:text-[#1d6f8c] inline-flex items-center gap-1">
+                                        {testStatus === 'testing' ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-plug"></i>}
+                                        <span className="underline">接続テスト</span>
                                     </button>
                                 </div>
                             </div>
@@ -710,7 +718,7 @@
                     {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><i className="fas fa-search text-4xl"></i></div><p className="font-bold text-gray-500">単語を入力して検索</p></div>}
 
                     {currentData && (
-                        <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8">
+                        <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8 allow-select">
                             {isFromList && <button onClick={onBack} className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-white text-gray-400 w-10 h-10 rounded-full shadow-md flex items-center justify-center z-20 hover:text-[#258FAF] transition-colors border border-gray-100"><i className="fas fa-times text-lg"></i></button>}
                             <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
                                 <div>
