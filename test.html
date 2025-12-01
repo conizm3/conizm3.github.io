@@ -318,4 +318,852 @@
                 "suru verb": "スル動詞", "translation": "翻訳", "common": "一般"
             };
             return text.split(/,\s*/).map(p => {
-                const lower =
+                const lower = p.toLowerCase();
+                if (lower.includes('noun')) return map['noun'];
+                if (lower.includes('verb')) return map['verb'];
+                if (lower.includes('adjective')) return map['adjective'];
+                if (lower.includes('adverb')) return map['adverb'];
+                return map[lower] || p;
+            }).filter((x, i, self) => self.indexOf(x) === i).join('・');
+        };
+
+        // --- 追加機能: AI解説取得 (Gemini API) ---
+        const fetchAIExplanation = async (term, apiKey) => {
+            if (!apiKey) return null;
+            const cleanKey = apiKey.trim(); 
+
+            const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
+            キーは以下の通りです:
+            "nuance": ニュアンス（簡潔に）
+            "scene": 使われるシーン（ビジネス、カジュアルなど）
+            "supplement": 補足情報
+            "exampleEn": この言葉を使った代表的な英文（1文）
+            "exampleJa": その英文の日本語訳`;
+            
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${cleanKey}`;
+
+            const callApi = async (retryCount = 0) => {
+                try {
+                    const res = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+
+                    if (!res.ok) {
+                        if ((res.status === 503 || res.status === 429) && retryCount < 5) {
+                            const delay = Math.pow(2, retryCount) * 1000; 
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            return callApi(retryCount + 1);
+                        }
+                        const errorData = await res.json().catch(() => ({}));
+                        if (res.status === 400 && (JSON.stringify(errorData).includes('API key') || JSON.stringify(errorData).includes('INVALID_ARGUMENT'))) {
+                            return { error: "ERROR_API_KEY" }; 
+                        }
+                        return null;
+                    }
+                    const data = await res.json();
+                    let text = null;
+                    if (data?.candidates?.[0]?.content?.parts?.[0]) {
+                        text = data.candidates[0].content.parts[0].text;
+                    }
+                    
+                    if (text) {
+                        try {
+                            const fence = "`" + "`" + "`";
+                            const jsonBlockPattern = new RegExp(fence + 'json', 'g');
+                            const codeBlockPattern = new RegExp(fence, 'g');
+                            const jsonStr = text.replace(jsonBlockPattern, '').replace(codeBlockPattern, '').trim();
+                            return JSON.parse(jsonStr);
+                        } catch (e) { return null; }
+                    }
+                    return null;
+                } catch (e) {
+                    if (retryCount < 5) {
+                        const delay = Math.pow(2, retryCount) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return callApi(retryCount + 1);
+                    }
+                    return null;
+                }
+            };
+            return callApi();
+        };
+
+        // --- API Functions ---
+        const fetchJishoData = async (term) => {
+            try {
+                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) { return null; }
+        };
+
+        const fetchFreeDictData = async (term) => {
+            try {
+                const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`);
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) { return null; }
+        };
+
+        const searchCache = new Map();
+
+        const fetchRichData = async (term) => {
+            if (searchCache.has(term)) return searchCache.get(term);
+
+            let searchWord = term, isJpSearch = isJapanese(term), tips = "公開辞書/翻訳データ", primaryTrans = "", meanings = [], pronunciation = "", synonyms = [], audioUrl = "", jishoFound = false;
+
+            try {
+                const jishoData = await fetchJishoData(term);
+                if (jishoData && jishoData.data && jishoData.data.length > 0) {
+                    jishoFound = true;
+                    tips = "Jisho.org";
+                    if (isJpSearch) {
+                        const entry = jishoData.data[0];
+                        const translated = await translateText(term, "ja|en");
+                        if (translated && translated !== term) searchWord = translated;
+                        else searchWord = entry.senses[0].english_definitions[0];
+                        
+                        primaryTrans = term;
+                        pronunciation = entry.japanese[0].reading || "";
+                        entry.senses.slice(0, 3).forEach(s => meanings.push({ partOfSpeech: s.parts_of_speech.join(', ') || 'Common', definitions: [{ ja: s.english_definitions.join('; '), en: "", exEn: "", exJa: "" }] }));
+                    } else {
+                        let entries = jishoData.data;
+                        const searchKeywords = term.toLowerCase().split(/\s+/).filter(w => !['a', 'the', 'to'].includes(w));
+                        if (searchKeywords.length > 0) {
+                             // 簡易的な絞り込みロジック
+                            const filtered = entries.filter(entry => 
+                                searchKeywords.every(kw => JSON.stringify(entry).toLowerCase().includes(kw))
+                            );
+                            if (filtered.length > 0) entries = filtered;
+                        }
+                        entries = entries.slice(0, 5);
+                        primaryTrans = entries[0].japanese[0].word || entries[0].japanese[0].reading;
+                        entries.forEach(e => {
+                            const w = e.japanese[0].word || e.japanese[0].reading;
+                            const r = e.japanese[0].reading;
+                            const defJa = (r && r !== w) ? `${w} (${r})` : w;
+                            const engDefs = e.senses.map(s => s.english_definitions.join(', ')).join('; ');
+                            const pos = e.senses[0].parts_of_speech.join(', ') || 'Common';
+                            meanings.push({ partOfSpeech: pos, definitions: [{ ja: defJa, en: engDefs, exEn: "", exJa: "" }] });
+                        });
+                        searchWord = term;
+                    }
+                }
+            } catch (e) {}
+
+            if (!jishoFound) {
+                if (!isJpSearch && !term.trim().includes(' ')) {
+                     const fd = await fetchFreeDictData(term);
+                     if (!fd || fd.length === 0) throw new Error("NOT_FOUND");
+                }
+                let trans = await translateText(term, isJpSearch ? "ja|en" : "en|ja");
+                if (!trans) throw new Error("NOT_FOUND");
+                searchWord = isJpSearch ? trans : term;
+                primaryTrans = isJpSearch ? term : trans;
+                meanings.push({ partOfSpeech: "Translation", definitions: [{ ja: primaryTrans, en: "", exEn: "", exJa: "" }] });
+                tips = "翻訳ソフト";
+            }
+
+            const resultData = { word: searchWord, translation: primaryTrans, meanings, pronunciation, synonyms: [], audioUrl: "", definition: meanings[0]?.definitions[0]?.ja || primaryTrans, example: "", tips };
+            searchCache.set(term, resultData);
+            return resultData;
+        };
+
+        const fetchEnrichment = async (currentData, term) => {
+            const searchWord = currentData.word;
+            const isJpSearch = isJapanese(term);
+            try {
+                const dictData = await fetchFreeDictData(searchWord);
+                if (!dictData || dictData.length === 0) return null;
+                const entry = dictData[0];
+                const newData = { ...currentData };
+                const p = entry.phonetics.find(p => p.audio && p.audio !== "");
+                if (p) newData.audioUrl = p.audio;
+                if (!newData.pronunciation && !isJpSearch) newData.pronunciation = entry.phonetic || "";
+                newData.synonyms = entry.meanings.flatMap(m => m.synonyms).slice(0, 5);
+                return newData;
+            } catch(e) { return null; }
+        };
+
+        const speak = (text, audioUrl = null) => {
+            if (audioUrl) {
+                new Audio(audioUrl).play().catch(e => console.error("Audio play failed", e));
+                return;
+            }
+            if (!text) return;
+            window.speechSynthesis.cancel();
+            const ut = new SpeechSynthesisUtterance(text);
+            ut.lang = 'en-US';
+            window.speechSynthesis.speak(ut);
+        };
+
+        // --- 3. Components ---
+
+        const Toast = ({ msg, onClose }) => {
+            useEffect(() => {
+                const timer = setTimeout(onClose, 3000);
+                return () => clearTimeout(timer);
+            }, []);
+            return (
+                <div className="fixed bottom-32 left-1/2 toast-anim neu-flat px-6 py-3 rounded-full text-sm text-[#258FAF] font-bold z-[100] shadow-lg text-center whitespace-nowrap bg-white border border-gray-100">
+                    {msg}
+                </div>
+            );
+        };
+
+        const DialogModal = ({ isOpen, type, message, onConfirm, onCancel }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-slate-100/90 z-[80] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
+                    <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-xs text-center border border-white">
+                        <p className="text-gray-700 font-bold mb-6 leading-relaxed whitespace-pre-wrap text-sm">{message}</p>
+                        <div className="flex gap-4 justify-center">
+                            {type === 'confirm' && (
+                                <button onClick={onCancel} className="neu-btn w-24 py-3 text-gray-500 font-bold text-xs rounded-xl">キャンセル</button>
+                            )}
+                            <button onClick={onConfirm} className="bg-[#258FAF] text-white w-24 py-3 rounded-xl font-bold text-xs shadow-lg active:scale-95 transition-transform">OK</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout }) => {
+            const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_apikey') || '');
+            const [testStatus, setTestStatus] = useState(null);
+            const [saveStatus, setSaveStatus] = useState('idle');
+
+            const handleSaveKey = () => {
+                const cleanKey = apiKey.trim();
+                localStorage.setItem('gemini_apikey', cleanKey);
+                setApiKey(cleanKey);
+                setSaveStatus('saved');
+                setTimeout(() => setSaveStatus('idle'), 2000);
+            };
+            
+            const handleTestConnection = async () => {
+                const cleanKey = apiKey.trim();
+                if (!cleanKey) {
+                    alert('APIキーを入力してください');
+                    return;
+                }
+                setTestStatus('testing');
+                try {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${cleanKey}`;
+                    const res = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: "Hello" }] }] })
+                    });
+                    
+                    if (res.ok) {
+                        setTestStatus('success');
+                        alert('接続成功！\nAPIは正しく動作しています。');
+                    } else {
+                        setTestStatus('error');
+                        alert('接続エラー');
+                    }
+                } catch (e) {
+                    setTestStatus('error');
+                    alert(`ネットワークエラー\n${e.message}`);
+                }
+            };
+
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-slate-100/90 z-[60] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
+                    <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-md max-h-[90vh] overflow-y-auto border border-white">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-lg font-bold text-[#258FAF]">設定</h2>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
+                        </div>
+                        <div className="mb-6 border-b border-gray-200 pb-6">
+                            <div className="flex items-center mb-3 flex-wrap">
+                                <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
+                            </div>
+                            <div className="bg-white p-4 rounded-xl border border-gray-100">
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={apiKey}
+                                        onChange={(e) => setApiKey(e.target.value)}
+                                        placeholder="APIキーを入力" 
+                                        className="neu-input flex-1 p-2 text-sm"
+                                    />
+                                    <button onClick={handleSaveKey} className={`text-white px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-colors ${saveStatus === 'saved' ? 'bg-green-500' : 'bg-[#258FAF]'}`}>
+                                        {saveStatus === 'saved' ? '保存' : '保存'}
+                                    </button>
+                                </div>
+                                <div className="mt-3 text-right">
+                                    <button onClick={handleTestConnection} className="text-xs text-[#258FAF] underline hover:text-[#1d6f8c]">
+                                        {testStatus === 'testing' ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-plug"></i>} 接続テスト
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mb-6 border-b border-gray-200 pb-6">
+                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
+                            <div>
+                                {user ? (
+                                    <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
+                                        <p className="text-sm text-green-700 font-bold mb-2">ログイン中</p>
+                                        <p className="text-xs text-gray-500 mb-3">{user.email || user.uid}</p>
+                                        <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white p-4 rounded-xl border border-gray-100 text-center">
+                                        <button onClick={onLogin} className="w-full bg-white border border-gray-200 text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
+                                            Googleでログイン
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-500 mb-3">ローカルバックアップ</h3>
+                            <div className="flex gap-3">
+                                <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1"><i className="fas fa-file-export text-lg"></i>保存 (DL)</button>
+                                <label className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1 cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={onImport} /><i className="fas fa-file-import text-lg"></i>復元</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 4. Views ---
+        // (SearchView, ListView, ReviewView は変更なし)
+        const SearchView = ({ onSaveWord, savedWords, setToast, externalResult, setExternalResult, isFromList, onBack, openAlert, onUpdateWord }) => {
+            const [term, setTerm] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [isEnriching, setIsEnriching] = useState(false); 
+            const resultRef = useRef(null);
+            const searchIdRef = useRef(0);
+            const isDataRichRef = useRef(false);
+            const isMounted = useRef(true);
+            const inputRef = useRef(null);
+
+            useEffect(() => {
+                isMounted.current = true;
+                if (inputRef.current) inputRef.current.focus();
+                return () => { isMounted.current = false; };
+            }, []);
+            
+            const handleSearch = async (e) => {
+                if (e) e.preventDefault();
+                if (!term.trim()) return;
+                
+                const currentId = ++searchIdRef.current;
+                isDataRichRef.current = false;
+
+                setLoading(true);
+                setIsEnriching(true); 
+                setExternalResult(null);
+
+                try {
+                    const coreData = await fetchRichData(term);
+                    onUpdateWord(coreData);
+
+                    if (isMounted.current && currentId === searchIdRef.current) {
+                        setExternalResult(coreData);
+                        isDataRichRef.current = true;
+                        setLoading(false);
+
+                        const enrichPromise = fetchEnrichment(coreData, term);
+                        const apiKey = localStorage.getItem('gemini_apikey');
+                        const aiPromise = apiKey ? fetchAIExplanation(coreData.word, apiKey) : Promise.resolve(null);
+
+                        Promise.all([enrichPromise, aiPromise]).then(([enriched, aiData]) => {
+                            if (!isMounted.current || currentId !== searchIdRef.current) return;
+                            let newData = { ...coreData };
+                            let hasUpdate = false;
+                            if (enriched) { newData = { ...newData, ...enriched }; hasUpdate = true; }
+                            if (aiData) {
+                                if (aiData.error === "ERROR_API_KEY") openAlert('Gemini APIキーが無効のようです');
+                                else { newData = { ...newData, aiData: aiData }; hasUpdate = true; }
+                            }
+                            if (hasUpdate) { setExternalResult(newData); onUpdateWord(newData); }
+                        }).finally(() => { 
+                             if (isMounted.current && currentId === searchIdRef.current) setIsEnriching(false); 
+                        });
+                    }
+                } catch (err) {
+                    if (isMounted.current && currentId === searchIdRef.current) {
+                        if (!isDataRichRef.current && !externalResult) {
+                            if (err.message === "NOT_FOUND") openAlert('見つかりませんでした');
+                            else openAlert('検索エラーが発生しました');
+                        }
+                        setLoading(false);
+                        setIsEnriching(false);
+                    }
+                }
+            };
+
+            useEffect(() => { if (externalResult && resultRef.current) resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [externalResult]);
+
+            useEffect(() => {
+                if (externalResult) {
+                    const savedItem = savedWords.find(w => w.word === externalResult.word);
+                    if (savedItem) {
+                        if (savedItem.tips !== externalResult.tips || savedItem.audioUrl !== externalResult.audioUrl || (!savedItem.example && externalResult.example)) {
+                            onUpdateWord(externalResult);
+                        }
+                    }
+                }
+            }, [externalResult, savedWords, onUpdateWord]);
+
+            const currentData = externalResult;
+            const isSaved = currentData && savedWords.some(w => w.word === currentData.word);
+
+            const resetToHome = () => {
+                searchIdRef.current++; setExternalResult(null); setTerm(''); setLoading(false); setIsEnriching(false);
+                if (inputRef.current) inputRef.current.focus();
+            };
+
+            return (
+                <div className="fade-in">
+                    <div className="mb-8 mt-2">
+                        <form onSubmit={handleSearch} className="relative">
+                            <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" autoFocus />
+                            <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
+                            {!isFromList && currentData && <button type="button" onClick={() => {setExternalResult(null); setTerm('');}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600"></button>}
+                            <button type="submit" className="absolute right-2 top-2 bg-[#258FAF] text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-md active:scale-95 transition-transform"><i className="fas fa-arrow-right"></i></button>
+                        </form>
+                    </div>
+
+                    {loading && <div className="flex flex-col items-center justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#258FAF] mb-4"></div><p className="text-sm text-gray-500 animate-pulse">検索中...</p></div>}
+                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><i className="fas fa-search text-4xl"></i></div><p className="font-bold text-gray-500">単語を入力して検索</p></div>}
+
+                    {currentData && (
+                        <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8">
+                            {isFromList && <button onClick={onBack} className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-white text-gray-400 w-10 h-10 rounded-full shadow-md flex items-center justify-center z-20 hover:text-[#258FAF] transition-colors border border-gray-100"><i className="fas fa-times text-lg"></i></button>}
+                            <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
+                                <div>
+                                    <h2 className="text-3xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{currentData.word}</h2>
+                                    {currentData.pronunciation && <div className="mb-2"><span className="text-xs md:text-sm text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded">{currentData.pronunciation}</span></div>}
+                                    <p className="text-lg md:text-xl font-bold text-gray-700 mt-3">{currentData.translation}</p>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button onClick={() => speak(currentData.word, currentData.audioUrl)} className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF]"><i className="fas fa-volume-up"></i></button>
+                                    <button onClick={() => onSaveWord(currentData)} className={`neu-btn w-10 h-10 flex items-center justify-center rounded-full ${isSaved ? 'text-yellow-500 neu-pressed' : 'text-gray-400'}`}><i className="fas fa-bookmark"></i></button>
+                                </div>
+                            </div>
+
+                            {/* AI Tips */}
+                            {currentData.aiData && (
+                                <div className="mb-6 fade-in">
+                                    <div className="neu-pressed bg-[#258FAF]/5 p-4 rounded-xl border border-[#258FAF]/20 relative overflow-hidden">
+                                        <div className="absolute top-0 left-0 w-1 h-full bg-[#258FAF]"></div>
+                                        <div className="flex gap-2 items-start mb-3">
+                                            <i className="fas fa-robot text-[#258FAF] mt-1"></i>
+                                            <p className="text-xs font-bold text-[#258FAF]">AI Tips</p>
+                                        </div>
+                                        <div className="space-y-3 pl-2">
+                                            {currentData.aiData.nuance && (<div><span className="text-[10px] font-bold text-[#258FAF] bg-white/50 px-2 py-0.5 rounded border border-[#258FAF]/10">ニュアンス</span><p className="text-sm text-gray-600 mt-1 leading-relaxed">{currentData.aiData.nuance}</p></div>)}
+                                            {currentData.aiData.scene && (<div><span className="text-[10px] font-bold text-[#258FAF] bg-white/50 px-2 py-0.5 rounded border border-[#258FAF]/10">シーン</span><p className="text-sm text-gray-600 mt-1 leading-relaxed">{currentData.aiData.scene}</p></div>)}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="space-y-8">
+                                {currentData.meanings && currentData.meanings.length > 0 ? (
+                                    currentData.meanings.map((m, idx) => (
+                                        <div key={idx} className="relative">
+                                            <div className="flex items-center gap-2 mb-3"><span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-md uppercase">{m.partOfSpeech.toUpperCase()}</span></div>
+                                            <div className="pl-2 border-l-2 border-[#258FAF]/30 space-y-6">
+                                                {m.definitions.map((def, dIdx) => (
+                                                    <div key={dIdx}>
+                                                        <p className="text-gray-800 font-bold mb-1 leading-relaxed text-sm md:text-base"><span className="text-[#258FAF] mr-1">{dIdx + 1}.</span> {def.ja}</p>
+                                                        <p className="text-xs text-gray-400 mb-2 pl-4">{def.en}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (<div className="text-center text-gray-400 text-sm">詳細な定義はありません。<br/><span className="text-xs">翻訳: {currentData.translation}</span></div>)}
+                                
+                                {currentData.synonyms && currentData.synonyms.length > 0 && (
+                                    <div className="pt-4 border-t border-gray-100">
+                                        <span className="text-xs font-bold text-gray-400 block mb-2">類義語 (Synonyms)</span>
+                                        <div className="flex flex-wrap gap-2">{currentData.synonyms.slice(0,8).map((syn, i) => <span key={i} className="neu-pressed px-3 py-1 text-xs text-gray-500 rounded-lg">{syn}</span>)}</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {!isFromList && currentData && (
+                        <button onClick={resetToHome} className="fixed bottom-[100px] right-4 w-14 h-14 bg-[#258FAF] text-white rounded-full shadow-lg flex items-center justify-center z-[60] hover:bg-[#1d6f8c] transition-transform active:scale-95">
+                            <i className="fas fa-search text-xl"></i>
+                        </button>
+                    )}
+                </div>
+            );
+        };
+
+        const ListView = ({ savedWords, onDeleteWord, onSelectWord }) => {
+            if (!savedWords || savedWords.length === 0) {
+                return <div className="text-center py-20 text-gray-400 fade-in"><p>保存された単語はありません</p></div>;
+            }
+            return (
+                <div className="fade-in">
+                    <h2 className="text-xl font-bold mb-6 text-[#258FAF] ml-2">単語帳 <span className="text-sm font-normal text-gray-500 ml-2">({savedWords.length})</span></h2>
+                    <div className="space-y-4">
+                        {savedWords.map((item, idx) => (
+                            <div key={idx} onClick={() => onSelectWord(item)} className="neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition">
+                                <div className="overflow-hidden">
+                                    <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
+                                    <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
+                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const ReviewView = ({ savedWords, onFinish, openAlert }) => {
+            const [isStarted, setIsStarted] = useState(false);
+            const [testMode, setTestMode] = useState('en_ja'); 
+            const [queue, setQueue] = useState([]);
+            const [index, setIndex] = useState(0);
+            const [isFlipped, setIsFlipped] = useState(false);
+            const [isExiting, setIsExiting] = useState(false);
+            const [isSwipeAction, setIsSwipeAction] = useState(null); 
+            const touchStartX = useRef(null);
+            const cardRef = useRef(null);
+
+            const startReview = () => {
+                if (savedWords.length === 0) return openAlert('単語帳が空です');
+                const shuffled = [...savedWords].sort(() => Math.random() - 0.5);
+                setQueue(shuffled);
+                setIndex(0);
+                setIsFlipped(false);
+                setIsStarted(true);
+            };
+
+            const handleNext = (isClear) => {
+                if (!isClear) {
+                    setQueue(prev => {
+                        const current = prev[index];
+                        return [...prev, current];
+                    });
+                }
+                setIsExiting(true);
+                setTimeout(() => {
+                    setIsFlipped(false);
+                    setIndex(prev => prev + 1);
+                    setIsExiting(false);
+                    setIsSwipeAction(null);
+                    if (cardRef.current) cardRef.current.style.transform = ''; 
+                }, 250);
+            };
+
+            useEffect(() => {
+               if (isStarted && index >= queue.length) {
+                   setIsStarted(false);
+                   setQueue([]);
+                   setIndex(0);
+                   openAlert('復習完了！お疲れ様でした。');
+                   onFinish();
+               }
+            }, [index, queue.length, isStarted]);
+
+            const toggleFlip = () => {
+                if (!isFlipped) {
+                     const wordToSpeak = queue[index].word;
+                     speak(wordToSpeak, queue[index].audioUrl);
+                }
+                setIsFlipped(!isFlipped);
+            };
+
+            const onTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
+            const onTouchMove = (e) => {
+                if (!touchStartX.current || !cardRef.current || isExiting) return;
+                const currentX = e.touches[0].clientX;
+                const diff = currentX - touchStartX.current;
+                const rotate = diff * 0.05;
+                cardRef.current.style.transform = `translateX(${diff}px) rotate(${rotate}deg)`;
+                if (diff > 50) setIsSwipeAction('clear');
+                else if (diff < -50) setIsSwipeAction('unclear');
+                else setIsSwipeAction(null);
+            };
+            const onTouchEnd = (e) => {
+                if (!touchStartX.current || !cardRef.current) return;
+                const touchEndX = e.changedTouches[0].clientX;
+                const distance = touchStartX.current - touchEndX;
+                if (Math.abs(distance) > 100) { 
+                    if (distance > 0) handleNext(false); else handleNext(true); 
+                } else {
+                    cardRef.current.style.transform = '';
+                    setIsSwipeAction(null);
+                }
+                touchStartX.current = null;
+            };
+
+            if (!isStarted) {
+                return (
+                    <div className="h-full flex flex-col justify-center items-center text-center fade-in">
+                        <div className="neu-flat w-40 h-40 rounded-full flex items-center justify-center mb-8 text-[#258FAF]"><i className="fas fa-graduation-cap text-6xl"></i></div>
+                        <h2 className="text-2xl font-bold mb-2 text-[#258FAF]">Review Mode</h2>
+                        <div className="flex gap-4 mb-10 bg-white p-1 rounded-xl shadow-inner">
+                            <button onClick={() => setTestMode('en_ja')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'en_ja' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>英 → 日</button>
+                            <button onClick={() => setTestMode('ja_en')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'ja_en' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>日 → 英</button>
+                        </div>
+                        <button onClick={startReview} className="bg-[#258FAF] text-white px-10 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">テストを開始</button>
+                    </div>
+                );
+            }
+
+            const currentCard = queue[index];
+            if (!currentCard) return null;
+            const questionText = testMode === 'en_ja' ? currentCard.word : currentCard.translation;
+            const answerMain = testMode === 'en_ja' ? currentCard.translation : currentCard.word;
+
+            return (
+                <div className="h-full flex flex-col items-center justify-center pb-4 relative fade-in overflow-hidden">
+                    <div ref={cardRef} className={`w-full max-w-sm h-[420px] card-flip cursor-pointer ${isFlipped ? 'flipped' : ''} ${isExiting ? (isSwipeAction === 'clear' ? 'slide-out-right' : 'slide-out-left') : 'slide-in-right'}`} onClick={toggleFlip} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} key={index}>
+                        <div className="card-inner">
+                            <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
+                                <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
+                                <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
+                                {isSwipeAction === 'clear' && <div className="absolute top-10 right-10 border-4 border-[#258FAF] text-[#258FAF] font-black text-2xl p-2 rounded transform rotate-12 opacity-80 pointer-events-none">CLEAR</div>}
+                                {isSwipeAction === 'unclear' && <div className="absolute top-10 left-10 border-4 border-gray-400 text-gray-400 font-black text-2xl p-2 rounded transform -rotate-12 opacity-80 pointer-events-none">UNCLEAR</div>}
+                                <div className="absolute bottom-6 w-full flex flex-col items-center gap-2"><p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p></div>
+                            </div>
+                            <div className="card-back neu-flat flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-[#F8FAFC] to-white">
+                                <span className="absolute top-6 left-6 text-xs font-bold text-[#258FAF]">ANSWER</span>
+                                <h3 className="text-2xl font-bold text-gray-700 mb-4">{answerMain}</h3>
+                                <div className="w-full overflow-y-auto max-h-32 text-sm text-gray-500 mb-4 px-4 space-y-2">
+                                    {currentCard.meanings && currentCard.meanings.length > 0 ? currentCard.meanings.map((m, i) => <p key={i}><span className="font-bold">{m.partOfSpeech}:</span> {m.definitions[0].ja}</p>) : <p>{currentCard.definition}</p>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 5. Main App ---
+        const App = () => {
+            const [tab, setTab] = useState('search');
+            // データ読み込みを安全に（JSONパースエラー防止）
+            const [savedWords, setSavedWords] = useState(() => {
+                try {
+                    const local = localStorage.getItem('aitan_words');
+                    return local ? JSON.parse(local) : [];
+                } catch (e) {
+                    console.error("Data Parse Error, resetting.", e);
+                    return [];
+                }
+            });
+            const [toastMsg, setToastMsg] = useState(null);
+            const [searchResult, setSearchResult] = useState(null);
+            const [searchViewKey, setSearchViewKey] = useState(0);
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isFromList, setIsFromList] = useState(false);
+            const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
+            const [user, setUser] = useState(null);
+            const [isCloudSynced, setIsCloudSynced] = useState(false);
+
+            const openAlert = (msg) => setDialog({ isOpen: true, type: 'alert', message: msg, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
+            const openConfirm = (msg, onConfirm) => setDialog({ isOpen: true, type: 'confirm', message: msg, onConfirm: () => { onConfirm(); setDialog(prev => ({ ...prev, isOpen: false })); } });
+
+            useEffect(() => {
+                // Firebaseが有効な場合のみ実行
+                if (auth) {
+                    auth.onAuthStateChanged(async (u) => {
+                        setUser(u);
+                        if (u) {
+                            setIsCloudSynced(false);
+                            setToastMsg('ログインしました');
+                            try {
+                                const doc = await db_firebase.collection('users').doc(u.uid).get();
+                                if (doc.exists) {
+                                    const cloudWords = doc.data().words || [];
+                                    await db.transaction('rw', db.words, async () => {
+                                        const localWords = await db.words.toArray();
+                                        const localWordMap = new Map(localWords.map(w => [w.word, w]));
+                                        const wordsToPut = [];
+                                        for (const cw of cloudWords) {
+                                            if (!localWordMap.has(cw.word)) {
+                                                const { id, ...wordWithoutId } = cw;
+                                                wordsToPut.push(wordWithoutId);
+                                            }
+                                        }
+                                        if (wordsToPut.length > 0) {
+                                            await db.words.bulkAdd(wordsToPut);
+                                        }
+                                    });
+                                    const allWords = await db.words.toArray();
+                                    allWords.sort((a,b) => (b.addedAt || 0) - (a.addedAt || 0));
+                                    setSavedWords(allWords);
+                                    setToastMsg('データを同期しました');
+                                }
+                                setIsCloudSynced(true);
+                            } catch (err) {
+                                console.error("Sync Error:", err);
+                                setIsCloudSynced(true);
+                            }
+                        } else {
+                            setIsCloudSynced(false);
+                        }
+                    });
+                }
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('aitan_words', JSON.stringify(savedWords));
+                if (user && db_firebase && isCloudSynced) {
+                    db_firebase.collection('users').doc(user.uid).set({
+                        words: savedWords,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true }).catch(e => console.error("Cloud Save Error", e));
+                }
+            }, [savedWords, user, isCloudSynced]);
+
+            const handleLogin = () => {
+                if (!auth) return openAlert("クラウド機能は現在利用できません");
+                const provider = new firebase.auth.GoogleAuthProvider();
+                auth.signInWithPopup(provider).catch(e => openAlert(`ログインエラー: ${e.message}`));
+            };
+
+            const handleLogout = () => {
+                if(!auth) return;
+                auth.signOut().then(() => {
+                    setToastMsg('ログアウトしました');
+                    setUser(null);
+                    setIsCloudSynced(false);
+                });
+            };
+
+            const handleUpdateWord = async (wordData) => {
+                setSavedWords(prev => prev.map(w => w.word === wordData.word ? { ...w, ...wordData } : w));
+                try {
+                    const wordInDb = await db.words.where('word').equals(wordData.word).first();
+                    if (wordInDb) {
+                        const { id, ...updates } = wordData;
+                        await db.words.update(wordInDb.id, updates);
+                    }
+                } catch (e) {}
+            };
+
+            const handleSaveWord = async (wordData) => {
+                try {
+                    const exists = savedWords.some(w => w.word === wordData.word);
+                    if (exists) {
+                        const wordInDb = await db.words.where('word').equals(wordData.word).first();
+                        if(wordInDb) await db.words.delete(wordInDb.id);
+                        setSavedWords(prev => prev.filter(w => w.word !== wordData.word));
+                        setToastMsg('削除しました');
+                    } else {
+                        const newWord = { ...wordData, addedAt: Date.now() };
+                        const id = await db.words.add(newWord); 
+                        setSavedWords(prev => [{ ...newWord, id }, ...prev]);
+                        setToastMsg('保存しました');
+                    }
+                } catch (e) { openAlert("保存エラー発生"); }
+            };
+
+            const handleDeleteWord = (word) => {
+                openConfirm(`「${word}」を削除しますか？`, async () => {
+                    const wordInDb = await db.words.where('word').equals(word).first();
+                    if(wordInDb) await db.words.delete(wordInDb.id);
+                    setSavedWords(prev => prev.filter(w => w.word !== word));
+                });
+            };
+
+            const handleListClick = (wordData) => {
+                setSearchResult(wordData);
+                setTab('search');
+                setIsFromList(true); 
+            };
+            
+            const resetToHome = () => {
+                setTab('search');
+                setSearchResult(null);
+                setIsFromList(false);
+                setSearchViewKey(prev => prev + 1); 
+            };
+
+            const handleBack = () => {
+                setSearchResult(null);
+                if (isFromList) {
+                    setTab('list');
+                    setIsFromList(false);
+                }
+            };
+
+            const handleExport = () => {
+                const dataStr = JSON.stringify(savedWords, null, 2);
+                const blob = new Blob([dataStr], {type: "application/json"});
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `backup.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const handleImport = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const imported = JSON.parse(event.target.result);
+                        if (Array.isArray(imported)) {
+                            openConfirm('データを上書きしますか？', () => {
+                                setSavedWords(imported);
+                                setToastMsg('復元しました');
+                                setIsSettingsOpen(false);
+                            });
+                        }
+                    } catch (error) { openAlert('読み込み失敗'); }
+                };
+                reader.readAsText(file);
+            };
+
+            return (
+                <div className="h-screen-safe">
+                    <header className="custom-header neu-flat">
+                        <div className="flex-1 flex justify-center items-center" onClick={resetToHome}>
+                            <img src="https://conizm3.github.io/wordrobe/images/wordrobe-top.png" alt="wordrobe" className="h-8" />
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} className="absolute right-4 text-gray-400 hover:text-[#258FAF]"><i className="fas fa-cog"></i></button>
+                    </header>
+
+                    <main className="custom-main main-with-ad">
+                        {tab === 'search' && <SearchView key={searchViewKey} savedWords={savedWords} onSaveWord={handleSaveWord} setToast={setToastMsg} externalResult={searchResult} setExternalResult={setSearchResult} isFromList={isFromList} onBack={handleBack} openAlert={openAlert} onUpdateWord={handleUpdateWord} />}
+                        {tab === 'list' && <ListView savedWords={savedWords} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} />}
+                        {tab === 'review' && <ReviewView savedWords={savedWords} onFinish={resetToHome} openAlert={openAlert} />}
+                    </main>
+
+                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} user={user} onLogin={handleLogin} onLogout={handleLogout} />
+                    <DialogModal isOpen={dialog.isOpen} type={dialog.type} message={dialog.message} onConfirm={dialog.onConfirm} onCancel={() => setDialog(prev => ({ ...prev, isOpen: false }))} />
+                    
+                    <nav className="custom-nav neu-flat nav-with-ad nav-bottom">
+                        <button onClick={() => resetToHome()} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'search' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'search' ? 'neu-pressed' : ''}`}><i className="fas fa-search text-lg"></i></div><span className="text-[10px] font-bold">検索</span></button>
+                        <button onClick={() => setTab('review')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'review' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'review' ? 'neu-pressed' : ''}`}><i className="fas fa-graduation-cap text-lg"></i></div><span className="text-[10px] font-bold">復習</span></button>
+                        <button onClick={() => setTab('list')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'list' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'list' ? 'neu-pressed' : ''}`}><i className="fas fa-book text-lg"></i></div><span className="text-[10px] font-bold">単語帳</span></button>
+                    </nav>
+
+                    {toastMsg && <Toast msg={toastMsg} onClose={() => setToastMsg(null)} />}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
