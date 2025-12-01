@@ -52,7 +52,6 @@
             touch-action: manipulation;
         }
 
-        /* エラー表示用のスタイル */
         #error-overlay {
             display: none;
             position: fixed;
@@ -178,26 +177,6 @@
         .slide-out-right { animation: slideOutRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
         @keyframes slideOutRight { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(50px); } }
         
-        .animate-flow-out-left { animation: flowOutLeft 1.5s infinite; }
-        @keyframes flowOutLeft { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(-10px); } }
-        .animate-flow-out-right { animation: flowOutRight 1.5s infinite; }
-        @keyframes flowOutRight { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(10px); } }
-
-        /* 追加: スマホ用ガイドのアニメーション */
-        .animate-flow-x { animation: flowX 2s infinite; }
-        @keyframes flowX { 0%, 100% { opacity: 0.8; transform: translateX(0); } 50% { opacity: 0.4; transform: translateX(-5px); } }
-        
-        .animate-flow-o { animation: flowO 2s infinite; }
-        @keyframes flowO { 0%, 100% { opacity: 0.8; transform: translateX(0); } 50% { opacity: 0.4; transform: translateX(5px); } }
-
-        .animate-slide-hand-slow { animation: slideHand 2s ease-in-out infinite; }
-        @keyframes slideHand { 
-            0% { transform: translateX(0) rotate(0deg); }
-            25% { transform: translateX(-15px) rotate(-10deg); }
-            75% { transform: translateX(15px) rotate(10deg); }
-            100% { transform: translateX(0) rotate(0deg); }
-        }
-
         .card-flip { perspective: 1000px; }
         .card-inner { 
             transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1); 
@@ -233,7 +212,6 @@
     <div id="root"></div>
 
     <script>
-        // グローバルエラーハンドリング
         window.onerror = function(message, source, lineno, colno, error) {
             const overlay = document.getElementById('error-overlay');
             const msgEl = document.getElementById('error-message');
@@ -245,9 +223,6 @@
     </script>
 
     <script type="text/babel">
-        // --- 安全な初期化処理 ---
-        
-        // Firebaseの初期化（エラーがあってもアプリを止めない）
         let db_firebase = null;
         let auth = null;
         let analytics = null;
@@ -272,13 +247,11 @@
                 analytics = firebase.analytics();
             } catch (e) {
                 console.warn("Firebase Init Error:", e);
-                // Firebaseが使えなくてもローカルモードで動くようにスルーする
             }
         } else {
             console.warn("Firebase SDK not loaded. Running in offline mode.");
         }
 
-        // Dexie (Local DB) Setup
         if (typeof Dexie === 'undefined') {
             throw new Error("Dexie.js library failed to load.");
         }
@@ -287,13 +260,11 @@
             words: '++id, word, nextReview, interval, repetition, efactor, addedAt'
         });
 
-        // React Setup
         if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
             throw new Error("React library failed to load.");
         }
         const { useState, useEffect, useRef } = React;
 
-        // --- 2. Helper Functions ---
         const translateText = async (text, langPair = "en|ja") => {
             if (!text) return "";
             const [source, target] = langPair.split('|');
@@ -328,18 +299,17 @@
             }).filter((x, i, self) => self.indexOf(x) === i).join('・');
         };
 
-        // --- 追加機能: AI解説取得 (Gemini API) ---
         const fetchAIExplanation = async (term, apiKey) => {
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
 
+            // AI Tips プロンプト変更
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
-            "nuance": ニュアンス（簡潔に）
-            "scene": 使われるシーン（ビジネス、カジュアルなど）
-            "supplement": 補足情報
-            "exampleEn": この言葉を使った代表的な英文（1文）
-            "exampleJa": その英文の日本語訳`;
+            "definition": 定義（日本語で簡潔に、10〜20語程度で）
+            "exampleEn": 英語の例文1つ
+            "exampleJa": 例文の日本語訳
+            "supplement": 補足情報（ニュアンス、文脈、類語との違い、フォーマル度、誤用しやすい点などを含める）`;
             
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${cleanKey}`;
 
@@ -391,7 +361,6 @@
             return callApi();
         };
 
-        // --- API Functions ---
         const fetchJishoData = async (term) => {
             try {
                 const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
@@ -433,7 +402,6 @@
                         let entries = jishoData.data;
                         const searchKeywords = term.toLowerCase().split(/\s+/).filter(w => !['a', 'the', 'to'].includes(w));
                         if (searchKeywords.length > 0) {
-                             // 簡易的な絞り込みロジック
                             const filtered = entries.filter(entry => 
                                 searchKeywords.every(kw => JSON.stringify(entry).toLowerCase().includes(kw))
                             );
@@ -499,8 +467,6 @@
             ut.lang = 'en-US';
             window.speechSynthesis.speak(ut);
         };
-
-        // --- 3. Components ---
 
         const Toast = ({ msg, onClose }) => {
             useEffect(() => {
@@ -617,6 +583,8 @@
                                 ) : (
                                     <div className="bg-white p-4 rounded-xl border border-gray-100 text-center">
                                         <button onClick={onLogin} className="w-full bg-white border border-gray-200 text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
+                                            {/* Google Logo SVG */}
+                                            <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
                                             Googleでログイン
                                         </button>
                                     </div>
@@ -630,13 +598,12 @@
                                 <label className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1 cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={onImport} /><i className="fas fa-file-import text-lg"></i>復元</label>
                             </div>
                         </div>
+                        <p className="text-right text-[10px] text-gray-300 mt-6 font-mono">v.1.01</p>
                     </div>
                 </div>
             );
         };
 
-        // --- 4. Views ---
-        // (SearchView, ListView, ReviewView は変更なし)
         const SearchView = ({ onSaveWord, savedWords, setToast, externalResult, setExternalResult, isFromList, onBack, openAlert, onUpdateWord }) => {
             const [term, setTerm] = useState('');
             const [loading, setLoading] = useState(false);
@@ -753,7 +720,7 @@
                                 </div>
                             </div>
 
-                            {/* AI Tips */}
+                            {/* AI Tips (New Structure) */}
                             {currentData.aiData && (
                                 <div className="mb-6 fade-in">
                                     <div className="neu-pressed bg-[#258FAF]/5 p-4 rounded-xl border border-[#258FAF]/20 relative overflow-hidden">
@@ -762,9 +729,26 @@
                                             <i className="fas fa-robot text-[#258FAF] mt-1"></i>
                                             <p className="text-xs font-bold text-[#258FAF]">AI Tips</p>
                                         </div>
-                                        <div className="space-y-3 pl-2">
-                                            {currentData.aiData.nuance && (<div><span className="text-[10px] font-bold text-[#258FAF] bg-white/50 px-2 py-0.5 rounded border border-[#258FAF]/10">ニュアンス</span><p className="text-sm text-gray-600 mt-1 leading-relaxed">{currentData.aiData.nuance}</p></div>)}
-                                            {currentData.aiData.scene && (<div><span className="text-[10px] font-bold text-[#258FAF] bg-white/50 px-2 py-0.5 rounded border border-[#258FAF]/10">シーン</span><p className="text-sm text-gray-600 mt-1 leading-relaxed">{currentData.aiData.scene}</p></div>)}
+                                        <div className="space-y-4 pl-2">
+                                            {currentData.aiData.definition && (
+                                                <div>
+                                                    <span className="text-[10px] font-bold text-[#258FAF] bg-white/50 px-2 py-0.5 rounded border border-[#258FAF]/10">定義</span>
+                                                    <p className="text-sm text-gray-700 mt-1 leading-relaxed font-bold">{currentData.aiData.definition}</p>
+                                                </div>
+                                            )}
+                                            {currentData.aiData.exampleEn && (
+                                                <div>
+                                                    <span className="text-[10px] font-bold text-[#258FAF] bg-white/50 px-2 py-0.5 rounded border border-[#258FAF]/10">例文</span>
+                                                    <p className="text-sm text-gray-700 mt-1 leading-relaxed italic">"{currentData.aiData.exampleEn}"</p>
+                                                    {currentData.aiData.exampleJa && <p className="text-xs text-gray-500 mt-1">{currentData.aiData.exampleJa}</p>}
+                                                </div>
+                                            )}
+                                            {currentData.aiData.supplement && (
+                                                <div>
+                                                    <span className="text-[10px] font-bold text-[#258FAF] bg-white/50 px-2 py-0.5 rounded border border-[#258FAF]/10">補足</span>
+                                                    <p className="text-sm text-gray-600 mt-1 leading-relaxed">{currentData.aiData.supplement}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -878,6 +862,15 @@
                }
             }, [index, queue.length, isStarted]);
 
+            useEffect(() => {
+                if (isStarted && queue[index] && testMode === 'en_ja') {
+                     const timer = setTimeout(() => {
+                         if (!isFlipped) speak(queue[index].word, queue[index].audioUrl);
+                     }, 300);
+                     return () => clearTimeout(timer);
+                }
+            }, [index, isStarted, testMode]);
+
             const toggleFlip = () => {
                 if (!isFlipped) {
                      const wordToSpeak = queue[index].word;
@@ -935,22 +928,27 @@
                         <div className="card-inner">
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
-                                <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
+                                <div className="flex-1 flex flex-col justify-center items-center w-full">
+                                    <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
+                                    {testMode === 'en_ja' && (
+                                        <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
+                                            <i className="fas fa-volume-up"></i>
+                                        </button>
+                                    )}
+                                </div>
                                 {isSwipeAction === 'clear' && <div className="absolute top-10 right-10 border-4 border-[#258FAF] text-[#258FAF] font-black text-2xl p-2 rounded transform rotate-12 opacity-80 pointer-events-none">CLEAR</div>}
                                 {isSwipeAction === 'unclear' && <div className="absolute top-10 left-10 border-4 border-gray-400 text-gray-400 font-black text-2xl p-2 rounded transform -rotate-12 opacity-80 pointer-events-none">UNCLEAR</div>}
-                                
                                 <div className="absolute bottom-6 w-full flex flex-col items-center gap-2">
                                     <p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p>
-                                    {/* 修正: スマホ用ガイドを追加 */}
                                     <div className="md:hidden text-gray-300 flex items-center mt-1 gap-2 w-full justify-center px-4">
-                                        <span className="text-lg font-bold text-gray-400 opacity-80 animate-flow-x">✕　</span>
-                                        <i className="fas fa-chevron-left animate-flow-out-left opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-gray-400 opacity-80">✕　</span>
+                                        <i className="fas fa-chevron-left opacity-50 text-xs"></i>
                                         <div className="mx-2 flex flex-col items-center">
-                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80 animate-slide-hand-slow"></i>
+                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80"></i>
                                             <span className="text-[8px] text-gray-400 mt-1">swipe</span>
                                         </div>
-                                        <i className="fas fa-chevron-right animate-flow-out-right opacity-50 text-xs"></i>
-                                        <span className="text-lg font-bold text-[#258FAF] opacity-80 animate-flow-o">　◯</span>
+                                        <i className="fas fa-chevron-right opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-[#258FAF] opacity-80">　◯</span>
                                     </div>
                                 </div>
                             </div>
@@ -960,6 +958,9 @@
                                 <div className="w-full overflow-y-auto max-h-32 text-sm text-gray-500 mb-4 px-4 space-y-2">
                                     {currentCard.meanings && currentCard.meanings.length > 0 ? currentCard.meanings.map((m, i) => <p key={i}><span className="font-bold">{m.partOfSpeech}:</span> {m.definitions[0].ja}</p>) : <p>{currentCard.definition}</p>}
                                 </div>
+                                <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full mt-2 text-[#258FAF]">
+                                    <i className="fas fa-volume-up"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -972,10 +973,8 @@
             );
         };
 
-        // --- 5. Main App ---
         const App = () => {
             const [tab, setTab] = useState('search');
-            // データ読み込みを安全に（JSONパースエラー防止）
             const [savedWords, setSavedWords] = useState(() => {
                 try {
                     const local = localStorage.getItem('aitan_words');
@@ -998,7 +997,6 @@
             const openConfirm = (msg, onConfirm) => setDialog({ isOpen: true, type: 'confirm', message: msg, onConfirm: () => { onConfirm(); setDialog(prev => ({ ...prev, isOpen: false })); } });
 
             useEffect(() => {
-                // Firebaseが有効な場合のみ実行
                 if (auth) {
                     auth.onAuthStateChanged(async (u) => {
                         setUser(u);
