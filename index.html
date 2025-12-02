@@ -158,19 +158,23 @@
     </nav>
 
     <!-- ヒーローセクション -->
-    <section class="relative hero-bg min-h-screen flex items-center pt-28 pb-12 overflow-hidden">
+    <!-- スマホではpt-20、PCではpt-28 -->
+    <section class="relative hero-bg min-h-screen flex items-center pt-20 md:pt-28 pb-12 overflow-hidden">
         
         <div class="relative z-10 max-w-5xl mx-auto px-4 w-full flex flex-col items-center text-center">
             
             <!-- バッジ -->
-            <span class="inline-block py-2 px-4 rounded-full neu-convex text-slate-600 text-[10px] font-bold mb-8 tracking-wide">
+            <!-- スマホではmb-4、PCではmb-8 -->
+            <span class="inline-block py-2 px-4 rounded-full neu-convex text-slate-600 text-[10px] font-bold mb-4 md:mb-8 tracking-wide">
                 <i class="fas fa-check-circle mr-1 text-[#258FAF]"></i> 完全無料・インストール不要
             </span>
             
-            <img src="https://conizm3.github.io/wordrobe/images/wordrobe-lptop.png" alt="wordrobeトップロゴ" class="w-40 md:w-56 mb-5 object-contain">
+            <!-- スマホではmb-4、PCではmb-5 -->
+            <img src="https://conizm3.github.io/wordrobe/images/wordrobe-lptop.png" alt="wordrobeトップロゴ" class="w-40 md:w-56 mb-4 md:mb-5 object-contain">
             
             <!-- キャッチコピーブロック -->
-            <div class="mb-10 max-w-3xl">
+            <!-- スマホではmb-6、PCではmb-10 -->
+            <div class="mb-6 md:mb-10 max-w-3xl">
                 <h1 class="text-4xl md:text-5xl font-light mb-6 text-slate-400 en-font tracking-tight">
                     Build your <span class="text-[#258FAF] font-normal">wordrobe</span>
                 </h1>
@@ -224,9 +228,11 @@
     </section>
 
     <!-- 機能紹介 -->
-    <section id="features" class="py-20 scroll-mt bg-[#F8FAFC]">
+    <!-- スマホではpy-12、PCではpy-20 -->
+    <section id="features" class="py-12 md:py-20 scroll-mt bg-[#F8FAFC]">
         <div class="max-w-6xl mx-auto px-4">
-            <div class="text-center mb-16">
+            <!-- スマホではmb-8、PCではmb-16 -->
+            <div class="text-center mb-8 md:mb-16">
                 <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">wordrobeの主な機能</h2>
                 <p class="text-slate-500 text-sm">学習を妨げない、ミニマルな設計。</p>
             </div>
@@ -270,7 +276,8 @@
     </section>
 
     <!-- 復習機能 -->
-    <section id="review" class="py-20">
+    <!-- スマホではpy-12、PCではpy-20 -->
+    <section id="review" class="py-12 md:py-20">
         <div class="max-w-5xl mx-auto px-4 flex flex-col md:flex-row items-center gap-12">
             <div class="md:w-1/2">
                 <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-8">記憶の定着を、もっと確実に。</h2>
@@ -318,7 +325,8 @@
     </section>
 
     <!-- プライバシーポリシー -->
-    <section id="privacy" class="py-20 px-4">
+    <!-- スマホではpy-12、PCではpy-20 -->
+    <section id="privacy" class="py-12 md:py-20 px-4">
         <div class="max-w-3xl mx-auto">
             <div class="neu-flat p-8 md:p-10">
                 <h2 class="text-xl font-bold text-slate-800 mb-6 border-b border-slate-200 pb-4">プライバシーポリシー</h2>
@@ -340,7 +348,7 @@
                 </div>
             </div>
             
-            <div class="text-center mt-12 text-slate-400 text-xs">
+            <div class="text-center mt-8 md:mt-12 text-slate-400 text-xs">
                 <p>&copy; 2025 wordrobe. All rights reserved.</p>
             </div>
         </div>
