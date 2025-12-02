@@ -71,7 +71,7 @@
         /* デバイスモックアップ用CSS */
         .mockup-phone {
             border: 6px solid #1e293b;
-            border-radius: 12px;
+            border-radius: 16px; /* 角を少しシャープに調整 */
             overflow: hidden;
             background: white;
             position: relative;
@@ -80,6 +80,11 @@
         .mockup-phone::before { /* ノッチ */
             content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
             width: 30%; height: 12px; background: #1e293b; border-radius: 0 0 4px 4px; z-index: 10;
+        }
+
+        /* 復習セクション用の丸みの強いモックアップ */
+        .mockup-phone-rounded {
+            border-radius: 24px;
         }
         
         .mockup-laptop {
@@ -95,12 +100,30 @@
             border-bottom: none;
             overflow: hidden;
             box-shadow: 10px 10px 20px rgba(0,0,0,0.05), -5px -5px 10px var(--shadow-light);
+            z-index: 2; /* 画面をベースより手前に */
         }
         .mockup-laptop-base {
-            height: 10px; background: #cbd5e1;
-            border-radius: 0 0 6px 6px;
+            height: 14px; 
+            background: #cbd5e1;
+            border-radius: 0 0 10px 10px;
             position: relative;
             box-shadow: 4px 4px 8px var(--shadow-dark);
+            /* PCらしさを出すための調整 */
+            width: 110%;
+            left: -5%;
+            z-index: 1;
+        }
+        /* キーボードの窪みっぽい装飾（オプション） */
+        .mockup-laptop-base::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 15%;
+            height: 4px;
+            background: rgba(0,0,0,0.1);
+            border-radius: 0 0 4px 4px;
         }
 
         .hero-bg {
@@ -122,8 +145,13 @@
                     <a href="#review" class="hover:text-[#258FAF] transition">復習テスト</a>
                     <a href="#privacy" class="hover:text-[#258FAF] transition">プライバシー</a>
                 </div>
-                <a href="./wordrobe.html" class="btn-primary text-white px-5 py-2.5 font-bold text-sm">
+                <!-- PC用ボタン -->
+                <a href="./wordrobe.html" class="hidden md:inline-flex btn-primary text-white px-5 py-2.5 font-bold text-sm items-center">
                     アプリを開く <i class="fas fa-arrow-right ml-1"></i>
+                </a>
+                <!-- スマホ用ボタン（アイコンのみ） -->
+                <a href="./wordrobe.html" class="md:hidden btn-primary text-white w-10 h-10 flex items-center justify-center rounded-full text-lg">
+                    <i class="fas fa-arrow-right"></i>
                 </a>
             </div>
         </div>
@@ -139,7 +167,7 @@
                 <i class="fas fa-check-circle mr-1 text-[#258FAF]"></i> 完全無料・インストール不要
             </span>
             
-            <img src="https://conizm3.github.io/wordrobe/images/wordrobe-lptop.png" alt="wordrobeトップロゴ" class="w-40 md:w-56 mb-8 object-contain">
+            <img src="https://conizm3.github.io/wordrobe/images/wordrobe-lptop.png" alt="wordrobeトップロゴ" class="w-40 md:w-56 mb-5 object-contain">
             
             <!-- キャッチコピーブロック -->
             <div class="mb-10 max-w-3xl">
@@ -147,7 +175,7 @@
                     Build your <span class="text-[#258FAF] font-normal">wordrobe</span>
                 </h1>
                 
-                <h2 class="text-xl md:text-2xl font-bold text-slate-800 mb-4">
+                <h2 class="text-base sm:text-xl md:text-2xl font-bold text-slate-800 mb-4 whitespace-nowrap">
                     あなただけの言葉のワードローブ。
                 </h2>
                 
@@ -280,7 +308,7 @@
             </div>
             
          <div class="md:w-1/2 flex items-center justify-center p-4">
-    <div class="mockup-phone aspect-[9/19] w-[220px] shadow-2xl overflow-hidden">
+    <div class="mockup-phone mockup-phone-rounded aspect-[9/19] w-[220px] shadow-2xl overflow-hidden">
         
         <img src="https://conizm3.github.io/wordrobe/images/lpmoc3.png" alt="復習画面" class="w-full h-full object-cover">
         
