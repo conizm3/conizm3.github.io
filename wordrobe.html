@@ -90,8 +90,8 @@
             width: 100%;
             margin: 0 !important;
             border-radius: 0 0 24px 24px !important;
-            padding-top: env(safe-area-inset-top, 20px) !important;
-            padding-bottom: 8px;
+            padding-top: calc(env(safe-area-inset-top, 0px) + 20px) !important;
+            padding-bottom: 20px; /* スマホ表示：以前の8pxから増やして約1.3倍の見た目に調整 */
             padding-left: 20px;
             padding-right: 20px;
             height: auto !important;
@@ -102,6 +102,15 @@
             z-index: 50;
             background: var(--bg-color);
             box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+            transition: all 0.3s ease;
+        }
+
+        /* PC表示時のヘッダー調整（以前の2倍から0.8倍程度に縮小） */
+        @media (min-width: 768px) {
+            header.custom-header {
+                padding-top: 24px !important; /* 32px * 0.8 ≈ 25px */
+                padding-bottom: 24px !important;
+            }
         }
 
         nav.custom-nav {
@@ -610,7 +619,11 @@
                                 <label className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1 cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={onImport} /><i className="fas fa-file-import text-lg"></i>復元</label>
                             </div>
                         </div>
-                        <p className="text-right text-[10px] text-gray-300 mt-6 font-mono">v.1.01</p>
+                        
+                        <div className="mt-8 flex flex-col items-center gap-1">
+                            <a href="https://conizm3.github.io/wordrobe/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">プライバシーポリシー</a>
+                            <p className="text-[10px] text-gray-300 font-mono">v.1.02</p>
+                        </div>
                     </div>
                 </div>
             );
@@ -1167,7 +1180,7 @@
                 <div className="h-screen-safe">
                     <header className="custom-header neu-flat">
                         <div className="flex-1 flex justify-center items-center" onClick={resetToHome}>
-                            <img src="https://conizm3.github.io/wordrobe/images/wordrobe-top.png" alt="wordrobe" className="h-8" />
+                            <img src="https://conizm3.github.io/wordrobe/images/wordrobe-top.png" alt="wordrobe" className="h-8 md:h-12" />
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} className="absolute right-4 text-gray-400 hover:text-[#258FAF]"><i className="fas fa-cog"></i></button>
                     </header>
