@@ -91,7 +91,7 @@
             margin: 0 !important;
             border-radius: 0 0 24px 24px !important;
             padding-top: env(safe-area-inset-top, 20px) !important;
-            padding-bottom: 8px;
+            padding-bottom: 20px; /* スマホ表示：以前の8pxから増やして約1.3倍の見た目に調整 */
             padding-left: 20px;
             padding-right: 20px;
             height: auto !important;
@@ -105,11 +105,11 @@
             transition: all 0.3s ease;
         }
 
-        /* PC表示時のヘッダー調整（高さを2倍程度に） */
+        /* PC表示時のヘッダー調整（以前の2倍から0.8倍程度に縮小） */
         @media (min-width: 768px) {
             header.custom-header {
-                padding-top: 32px !important;
-                padding-bottom: 32px !important;
+                padding-top: 24px !important; /* 32px * 0.8 ≈ 25px */
+                padding-bottom: 24px !important;
             }
         }
 
@@ -620,8 +620,8 @@
                             </div>
                         </div>
                         
-                        <div className="mt-8 flex flex-col items-end gap-1">
-                            <a href="https://conizm3.github.io/wordrobe/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-[#258FAF] border-b border-transparent hover:border-[#258FAF] transition-colors mb-1">プライバシーポリシー</a>
+                        <div className="mt-8 flex flex-col items-center gap-1">
+                            <a href="https://conizm3.github.io/wordrobe/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">プライバシーポリシー</a>
                             <p className="text-[10px] text-gray-300 font-mono">v.1.02</p>
                         </div>
                     </div>
