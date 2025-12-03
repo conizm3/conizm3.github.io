@@ -272,8 +272,10 @@
             throw new Error("Dexie.js library failed to load.");
         }
         const db = new Dexie('WordloopDB');
-        db.version(1).stores({
-            words: '++id, word, nextReview, interval, repetition, efactor, addedAt'
+        // Version 2: deleted_words テーブルを追加して削除履歴を管理
+        db.version(2).stores({
+            words: '++id, word, nextReview, interval, repetition, efactor, addedAt',
+            deleted_words: 'word' // 削除された単語の履歴
         });
 
         if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
@@ -617,7 +619,7 @@
                                         {saveStatus === 'saved' ? '保存' : '保存'}
                                     </button>
                                 </div>
-                                <div className="mt-3 flex justify-end items-center gap-4">
+                                <div className="mt-3 flex justify-center items-center gap-4">
                                     <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] hover:text-[#1d6f8c] flex items-center gap-1">
                                         <i className="fas fa-key"></i> <span className="underline">APIキー取得</span>
                                     </a>
@@ -630,7 +632,12 @@
                         </div>
 
                         <div className="mb-6 border-b border-gray-200 pb-6">
-                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
+                            <div className="flex flex-col mb-3">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6">Googleアカウントでログインして、データを同期します</p>
+                            </div>
                             <div>
                                 {user ? (
                                     <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
@@ -649,7 +656,12 @@
                             </div>
                         </div>
                         <div>
-                            <h3 className="text-sm font-bold text-gray-500 mb-3">ローカルバックアップ</h3>
+                            <div className="flex flex-col mb-3">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6">現在のデータをファイルに保存、または復元します</p>
+                            </div>
                             <div className="flex gap-3">
                                 <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1"><i className="fas fa-file-export text-lg"></i>保存 (DL)</button>
                                 <label className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1 cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={onImport} /><i className="fas fa-file-import text-lg"></i>復元</label>
@@ -786,7 +798,11 @@
                         <form onSubmit={handleSearch} className="relative">
                             <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" autoFocus />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
-                            {!isFromList && currentData && <button type="button" onClick={() => {setExternalResult(null); setTerm('');}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600"></button>}
+                            {term && (
+                                <button type="button" onClick={() => {setTerm(''); inputRef.current.focus();}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600">
+                                    <i className="fas fa-times"></i>
+                                </button>
+                            )}
                             <button type="submit" className="absolute right-2 top-2 bg-[#258FAF] text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-md active:scale-95 transition-transform"><i className="fas fa-arrow-right"></i></button>
                         </form>
                     </div>
@@ -1096,12 +1112,20 @@
                                 const doc = await db_firebase.collection('users').doc(u.uid).get();
                                 if (doc.exists) {
                                     const cloudWords = doc.data().words || [];
-                                    await db.transaction('rw', db.words, async () => {
+                                    
+                                    // 削除済みリストと照合して同期
+                                    await db.transaction('rw', db.words, db.deleted_words, async () => {
                                         const localWords = await db.words.toArray();
                                         const localWordMap = new Map(localWords.map(w => [w.word, w]));
+                                        
+                                        // 削除済みリストを取得
+                                        const deletedItems = await db.deleted_words.toArray();
+                                        const deletedSet = new Set(deletedItems.map(d => d.word));
+
                                         const wordsToPut = [];
                                         for (const cw of cloudWords) {
-                                            if (!localWordMap.has(cw.word)) {
+                                            // ローカルになく、かつ削除済みリストにもない場合のみ追加
+                                            if (!localWordMap.has(cw.word) && !deletedSet.has(cw.word)) {
                                                 const { id, ...wordWithoutId } = cw;
                                                 wordsToPut.push(wordWithoutId);
                                             }
@@ -1173,6 +1197,10 @@
                         setToastMsg('削除しました');
                     } else {
                         const newWord = { ...wordData, addedAt: Date.now() };
+                        
+                        // 保存処理：削除済みリストにあった場合は削除リストから除外（復活処理）
+                        await db.deleted_words.delete(newWord.word).catch(() => {});
+
                         const id = await db.words.add(newWord); 
                         setSavedWords(prev => [{ ...newWord, id }, ...prev]);
                         setToastMsg('保存しました');
@@ -1183,7 +1211,11 @@
             const handleDeleteWord = (word) => {
                 openConfirm(`「${word}」を削除しますか？`, async () => {
                     const wordInDb = await db.words.where('word').equals(word).first();
-                    if(wordInDb) await db.words.delete(wordInDb.id);
+                    if(wordInDb) {
+                        await db.words.delete(wordInDb.id);
+                        // 削除処理：削除済みリストに追加
+                        await db.deleted_words.put({ word: word });
+                    }
                     setSavedWords(prev => prev.filter(w => w.word !== word));
                 });
             };
