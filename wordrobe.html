@@ -8,9 +8,6 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="wordrobe">
-    <!-- manifest.jsonは外部ファイルのため、ローカル環境やCORS制限のある環境では読み込まれない場合があります -->
-    <!-- <link rel="manifest" href="./manifest.json"> -->
-    
     <link rel="apple-touch-icon" href="https://conizm3.github.io/wordrobe/images/wordrobe-icon.png">
     <link rel="icon" type="image/svg+xml" href="https://conizm3.github.io/wordrobe/images/wordrobe-icon.png">
     <meta property="og:title" content="wordrobe">
@@ -272,8 +269,10 @@
             throw new Error("Dexie.js library failed to load.");
         }
         const db = new Dexie('WordloopDB');
-        db.version(1).stores({
-            words: '++id, word, nextReview, interval, repetition, efactor, addedAt'
+        // Version 2: deleted_words テーブルを追加して削除履歴を管理
+        db.version(2).stores({
+            words: '++id, word, nextReview, interval, repetition, efactor, addedAt',
+            deleted_words: 'word' // 削除された単語の履歴
         });
 
         if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
@@ -634,7 +633,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6">ログインすると単語帳データを同期できます</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6">Googleアカウントでログインして、データを同期します</p>
                             </div>
                             <div>
                                 {user ? (
@@ -658,7 +657,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6">単語帳データをローカル保存/復元します</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6">現在のデータをファイルに保存、または復元します</p>
                             </div>
                             <div className="flex gap-3">
                                 <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1"><i className="fas fa-file-export text-lg"></i>保存 (DL)</button>
@@ -1110,12 +1109,20 @@
                                 const doc = await db_firebase.collection('users').doc(u.uid).get();
                                 if (doc.exists) {
                                     const cloudWords = doc.data().words || [];
-                                    await db.transaction('rw', db.words, async () => {
+                                    
+                                    // 削除済みリストと照合して同期
+                                    await db.transaction('rw', db.words, db.deleted_words, async () => {
                                         const localWords = await db.words.toArray();
                                         const localWordMap = new Map(localWords.map(w => [w.word, w]));
+                                        
+                                        // 削除済みリストを取得
+                                        const deletedItems = await db.deleted_words.toArray();
+                                        const deletedSet = new Set(deletedItems.map(d => d.word));
+
                                         const wordsToPut = [];
                                         for (const cw of cloudWords) {
-                                            if (!localWordMap.has(cw.word)) {
+                                            // ローカルになく、かつ削除済みリストにもない場合のみ追加
+                                            if (!localWordMap.has(cw.word) && !deletedSet.has(cw.word)) {
                                                 const { id, ...wordWithoutId } = cw;
                                                 wordsToPut.push(wordWithoutId);
                                             }
@@ -1187,6 +1194,10 @@
                         setToastMsg('削除しました');
                     } else {
                         const newWord = { ...wordData, addedAt: Date.now() };
+                        
+                        // 保存処理：削除済みリストにあった場合は削除リストから除外（復活処理）
+                        await db.deleted_words.delete(newWord.word).catch(() => {});
+
                         const id = await db.words.add(newWord); 
                         setSavedWords(prev => [{ ...newWord, id }, ...prev]);
                         setToastMsg('保存しました');
@@ -1197,7 +1208,11 @@
             const handleDeleteWord = (word) => {
                 openConfirm(`「${word}」を削除しますか？`, async () => {
                     const wordInDb = await db.words.where('word').equals(word).first();
-                    if(wordInDb) await db.words.delete(wordInDb.id);
+                    if(wordInDb) {
+                        await db.words.delete(wordInDb.id);
+                        // 削除処理：削除済みリストに追加
+                        await db.deleted_words.put({ word: word });
+                    }
                     setSavedWords(prev => prev.filter(w => w.word !== word));
                 });
             };
