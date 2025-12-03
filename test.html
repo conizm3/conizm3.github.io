@@ -8,9 +8,6 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="wordrobe">
-    <!-- manifest.jsonは外部ファイルのため、ローカル環境やCORS制限のある環境では読み込まれない場合があります -->
-    <!-- <link rel="manifest" href="./manifest.json"> -->
-    
     <link rel="apple-touch-icon" href="https://conizm3.github.io/wordrobe/images/wordrobe-icon.png">
     <link rel="icon" type="image/svg+xml" href="https://conizm3.github.io/wordrobe/images/wordrobe-icon.png">
     <meta property="og:title" content="wordrobe">
@@ -615,8 +612,8 @@
                                         placeholder="APIキーを入力" 
                                         className="neu-input flex-1 p-2 text-sm min-w-0"
                                     />
-                                    <button onClick={handleSaveKey} className={`text-white px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-colors whitespace-nowrap ${saveStatus === 'saved' ? 'bg-green-500' : 'bg-[#258FAF]'}`}>
-                                        {saveStatus === 'saved' ? '保存' : '保存'}
+                                    <button onClick={handleSaveKey} className={`text-white px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-colors whitespace-nowrap ${saveStatus === 'saved' ? 'bg-[#EAB308]' : 'bg-[#258FAF]'}`}>
+                                        {saveStatus === 'saved' ? '保存しました' : '保存'}
                                     </button>
                                 </div>
                                 <div className="mt-3 flex justify-center items-center gap-4">
@@ -640,8 +637,8 @@
                             </div>
                             <div>
                                 {user ? (
-                                    <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
-                                        <p className="text-sm text-green-700 font-bold mb-2">ログイン中</p>
+                                    <div className="neu-pressed bg-[#258FAF]/5 p-4 rounded-xl border border-[#258FAF]/20 relative overflow-hidden text-center">
+                                        <p className="text-sm text-[#258FAF] font-bold mb-2">ログイン中</p>
                                         <p className="text-xs text-gray-500 mb-3">{user.email || user.uid}</p>
                                         <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
                                     </div>
