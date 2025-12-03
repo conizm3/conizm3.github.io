@@ -8,7 +8,8 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="wordrobe">
-    <link rel="manifest" href="./manifest.json">
+    <!-- manifest.jsonは外部ファイルのため、ローカル環境やCORS制限のある環境では読み込まれない場合があります -->
+    <!-- <link rel="manifest" href="./manifest.json"> -->
     
     <link rel="apple-touch-icon" href="https://conizm3.github.io/wordrobe/images/wordrobe-icon.png">
     <link rel="icon" type="image/svg+xml" href="https://conizm3.github.io/wordrobe/images/wordrobe-icon.png">
@@ -91,7 +92,7 @@
             margin: 0 !important;
             border-radius: 0 0 24px 24px !important;
             padding-top: calc(env(safe-area-inset-top, 0px) + 20px) !important;
-            padding-bottom: 20px; /* スマホ表示：以前の8pxから増やして約1.3倍の見た目に調整 */
+            padding-bottom: 20px;
             padding-left: 20px;
             padding-right: 20px;
             height: auto !important;
@@ -105,10 +106,10 @@
             transition: all 0.3s ease;
         }
 
-        /* PC表示時のヘッダー調整（以前の2倍から0.8倍程度に縮小） */
+        /* PC表示時のヘッダー調整 */
         @media (min-width: 768px) {
             header.custom-header {
-                padding-top: 24px !important; /* 32px * 0.8 ≈ 25px */
+                padding-top: 24px !important;
                 padding-bottom: 24px !important;
             }
         }
@@ -471,17 +472,52 @@
             } catch(e) { return null; }
         };
 
+        // --- 音声関連の処理 ---
+        // グローバル変数として利用可能な声をキャッシュ
+        let englishVoices = [];
+        const loadVoices = () => {
+            const voices = window.speechSynthesis.getVoices();
+            // 英語系の声だけフィルタリング
+            englishVoices = voices.filter(v => v.lang.startsWith('en'));
+        };
+
+        // 初回ロード
+        loadVoices();
+        // Chromeなどは非同期でロードされるためイベントリスナーが必要
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+        }
+
         const speak = (text, audioUrl = null) => {
+            // APIなどに音声URLがあればそれを優先（ネイティブ音声）
             if (audioUrl) {
                 new Audio(audioUrl).play().catch(e => console.error("Audio play failed", e));
                 return;
             }
             if (!text) return;
+            
+            // 読み上げのキャンセル
             window.speechSynthesis.cancel();
+            
             const ut = new SpeechSynthesisUtterance(text);
             ut.lang = 'en-US';
+
+            // スマホ等で日本語読みになるのを防ぐため、明示的に英語のVoiceオブジェクトを探してセットする
+            if (englishVoices.length === 0) loadVoices(); 
+            
+            // 優先順位: 1. Google US English (Android等) 2. en-US 3. en-GB 4. 任意の英語
+            const preferredVoice = englishVoices.find(v => v.name === 'Google US English') || 
+                                   englishVoices.find(v => v.lang === 'en-US') || 
+                                   englishVoices.find(v => v.lang === 'en-GB') || 
+                                   englishVoices[0];
+            
+            if (preferredVoice) {
+                ut.voice = preferredVoice;
+            }
+
             window.speechSynthesis.speak(ut);
         };
+        // --- 音声処理終了 ---
 
         const Toast = ({ msg, onClose }) => {
             useEffect(() => {
@@ -581,7 +617,7 @@
                                         {saveStatus === 'saved' ? '保存' : '保存'}
                                     </button>
                                 </div>
-                                <div className="mt-3 flex justify-end items-center gap-4">
+                                <div className="mt-3 flex justify-center items-center gap-4">
                                     <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] hover:text-[#1d6f8c] flex items-center gap-1">
                                         <i className="fas fa-key"></i> <span className="underline">APIキー取得</span>
                                     </a>
@@ -594,7 +630,12 @@
                         </div>
 
                         <div className="mb-6 border-b border-gray-200 pb-6">
-                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
+                            <div className="flex flex-col mb-3">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6">Googleアカウントでログインして、データを同期します</p>
+                            </div>
                             <div>
                                 {user ? (
                                     <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
@@ -613,7 +654,12 @@
                             </div>
                         </div>
                         <div>
-                            <h3 className="text-sm font-bold text-gray-500 mb-3">ローカルバックアップ</h3>
+                            <div className="flex flex-col mb-3">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6">現在のデータをファイルに保存、または復元します</p>
+                            </div>
                             <div className="flex gap-3">
                                 <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1"><i className="fas fa-file-export text-lg"></i>保存 (DL)</button>
                                 <label className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1 cursor-pointer"><input type="file" accept=".json" className="hidden" onChange={onImport} /><i className="fas fa-file-import text-lg"></i>復元</label>
@@ -750,7 +796,11 @@
                         <form onSubmit={handleSearch} className="relative">
                             <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" autoFocus />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
-                            {!isFromList && currentData && <button type="button" onClick={() => {setExternalResult(null); setTerm('');}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600"></button>}
+                            {term && (
+                                <button type="button" onClick={() => {setTerm(''); inputRef.current.focus();}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600">
+                                    <i className="fas fa-times"></i>
+                                </button>
+                            )}
                             <button type="submit" className="absolute right-2 top-2 bg-[#258FAF] text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-md active:scale-95 transition-transform"><i className="fas fa-arrow-right"></i></button>
                         </form>
                     </div>
