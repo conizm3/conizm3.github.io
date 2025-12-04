@@ -269,10 +269,9 @@
             throw new Error("Dexie.js library failed to load.");
         }
         const db = new Dexie('WordloopDB');
-        // Version 2: deleted_words テーブルを追加して削除履歴を管理
         db.version(2).stores({
             words: '++id, word, nextReview, interval, repetition, efactor, addedAt',
-            deleted_words: 'word' // 削除された単語の履歴
+            deleted_words: 'word'
         });
 
         if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
@@ -280,45 +279,40 @@
         }
         const { useState, useEffect, useRef } = React;
 
+        // タイムアウト付きFetch関数
+        const fetchWithTimeout = async (url, options = {}, timeout = 4000) => {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+            try {
+                const response = await fetch(url, { ...options, signal: controller.signal });
+                clearTimeout(id);
+                return response;
+            } catch (error) {
+                clearTimeout(id);
+                throw error;
+            }
+        };
+
         const translateText = async (text, langPair = "en|ja") => {
-            if (!text) return "";
+            if (!text) return null;
             const [source, target] = langPair.split('|');
             try {
-                const res = await fetch(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`);
-                if (!res.ok) return text;
+                const res = await fetchWithTimeout(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`, {}, 4000);
+                if (!res.ok) return null;
                 const data = await res.json();
                 return data.translation;
             } catch (e) {
-                console.warn("Translation failed", e);
-                return text; 
+                console.warn("Translation failed or timed out", e);
+                return null; 
             }
         };
 
         const isJapanese = (text) => /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
 
-        const getPartOfSpeechJa = (text) => {
-            const map = {
-                noun: "名詞", verb: "動詞", adjective: "形容詞", adverb: "副詞",
-                pronoun: "代名詞", preposition: "前置詞", conjunction: "接続詞",
-                interjection: "間投詞", article: "冠詞", determiner: "限定詞",
-                "transitive verb": "他動詞", "intransitive verb": "自動詞",
-                "suru verb": "スル動詞", "translation": "翻訳", "common": "一般"
-            };
-            return text.split(/,\s*/).map(p => {
-                const lower = p.toLowerCase();
-                if (lower.includes('noun')) return map['noun'];
-                if (lower.includes('verb')) return map['verb'];
-                if (lower.includes('adjective')) return map['adjective'];
-                if (lower.includes('adverb')) return map['adverb'];
-                return map[lower] || p;
-            }).filter((x, i, self) => self.indexOf(x) === i).join('・');
-        };
-
         const fetchAIExplanation = async (term, apiKey) => {
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
 
-            // AI Tips プロンプト変更
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
             "definition": 定義（日本語で簡潔に、10〜20語程度で）
@@ -330,14 +324,14 @@
 
             const callApi = async (retryCount = 0) => {
                 try {
-                    const res = await fetch(url, {
+                    const res = await fetchWithTimeout(url, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                    });
+                    }, 5000); // AIは少し長めに待つ
 
                     if (!res.ok) {
-                        if ((res.status === 503 || res.status === 429) && retryCount < 5) {
+                        if ((res.status === 503 || res.status === 429) && retryCount < 2) {
                             const delay = Math.pow(2, retryCount) * 1000; 
                             await new Promise(resolve => setTimeout(resolve, delay));
                             return callApi(retryCount + 1);
@@ -365,7 +359,7 @@
                     }
                     return null;
                 } catch (e) {
-                    if (retryCount < 5) {
+                    if (retryCount < 2) {
                         const delay = Math.pow(2, retryCount) * 1000;
                         await new Promise(resolve => setTimeout(resolve, delay));
                         return callApi(retryCount + 1);
@@ -378,7 +372,8 @@
 
         const fetchJishoData = async (term) => {
             try {
-                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
+                // タイムアウトを4秒に設定
+                const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`, {}, 4000);
                 if (!res.ok) return null;
                 return await res.json();
             } catch (e) { return null; }
@@ -386,7 +381,7 @@
 
         const fetchFreeDictData = async (term) => {
             try {
-                const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`);
+                const res = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`, {}, 4000);
                 if (!res.ok) return null;
                 return await res.json();
             } catch (e) { return null; }
@@ -406,11 +401,20 @@
                     tips = "Jisho.org";
                     if (isJpSearch) {
                         const entry = jishoData.data[0];
-                        const translated = await translateText(term, "ja|en");
-                        if (translated && translated !== term) searchWord = translated;
-                        else searchWord = entry.senses[0].english_definitions[0];
+                        // 日本語検索の場合、まず英語定義を取得
+                        const englishDef = entry.senses[0].english_definitions[0];
                         
-                        primaryTrans = term;
+                        // 念のため翻訳も試すが、失敗したらJishoの英語定義を使う
+                        const translated = await translateText(term, "ja|en");
+                        
+                        if (translated && translated !== term) {
+                            searchWord = translated;
+                        } else {
+                            // 翻訳失敗時はJishoの定義を使用
+                            searchWord = englishDef;
+                        }
+                        
+                        primaryTrans = term; // 表示上の「翻訳」部分（サブ）に日本語を入れる
                         pronunciation = entry.japanese[0].reading || "";
                         entry.senses.slice(0, 3).forEach(s => meanings.push({ partOfSpeech: s.parts_of_speech.join(', ') || 'Common', definitions: [{ ja: s.english_definitions.join('; '), en: "", exEn: "", exJa: "" }] }));
                     } else {
@@ -438,12 +442,20 @@
             } catch (e) {}
 
             if (!jishoFound) {
+                // Jishoで見つからなかった場合（タイムアウト含む）
                 if (!isJpSearch && !term.trim().includes(' ')) {
                      const fd = await fetchFreeDictData(term);
                      if (!fd || fd.length === 0) throw new Error("NOT_FOUND");
                 }
+                
+                // 翻訳を試みる
                 let trans = await translateText(term, isJpSearch ? "ja|en" : "en|ja");
-                if (!trans) throw new Error("NOT_FOUND");
+                
+                // 翻訳失敗（null）または入力と同じものが返ってきた場合
+                if (!trans || trans === term) {
+                    throw new Error("NOT_FOUND");
+                }
+                
                 searchWord = isJpSearch ? trans : term;
                 primaryTrans = isJpSearch ? term : trans;
                 meanings.push({ partOfSpeech: "Translation", definitions: [{ ja: primaryTrans, en: "", exEn: "", exJa: "" }] });
@@ -472,51 +484,36 @@
         };
 
         // --- 音声関連の処理 ---
-        // グローバル変数として利用可能な声をキャッシュ
         let englishVoices = [];
         const loadVoices = () => {
             const voices = window.speechSynthesis.getVoices();
-            // 英語系の声だけフィルタリング
             englishVoices = voices.filter(v => v.lang.startsWith('en'));
         };
 
-        // 初回ロード
         loadVoices();
-        // Chromeなどは非同期でロードされるためイベントリスナーが必要
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
             window.speechSynthesis.onvoiceschanged = loadVoices;
         }
 
         const speak = (text, audioUrl = null) => {
-            // APIなどに音声URLがあればそれを優先（ネイティブ音声）
             if (audioUrl) {
                 new Audio(audioUrl).play().catch(e => console.error("Audio play failed", e));
                 return;
             }
             if (!text) return;
-            
-            // 読み上げのキャンセル
             window.speechSynthesis.cancel();
-            
             const ut = new SpeechSynthesisUtterance(text);
             ut.lang = 'en-US';
-
-            // スマホ等で日本語読みになるのを防ぐため、明示的に英語のVoiceオブジェクトを探してセットする
             if (englishVoices.length === 0) loadVoices(); 
-            
-            // 優先順位: 1. Google US English (Android等) 2. en-US 3. en-GB 4. 任意の英語
             const preferredVoice = englishVoices.find(v => v.name === 'Google US English') || 
                                    englishVoices.find(v => v.lang === 'en-US') || 
                                    englishVoices.find(v => v.lang === 'en-GB') || 
                                    englishVoices[0];
-            
             if (preferredVoice) {
                 ut.voice = preferredVoice;
             }
-
             window.speechSynthesis.speak(ut);
         };
-        // --- 音声処理終了 ---
 
         const Toast = ({ msg, onClose }) => {
             useEffect(() => {
@@ -569,11 +566,11 @@
                 setTestStatus('testing');
                 try {
                     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${cleanKey}`;
-                    const res = await fetch(url, {
+                    const res = await fetchWithTimeout(url, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ contents: [{ parts: [{ text: "Hello" }] }] })
-                    });
+                    }, 5000);
                     
                     if (res.ok) {
                         setTestStatus('success');
