@@ -615,8 +615,9 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 whitespace-nowrap ml-6">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
-                                <p className="text-[9px] text-gray-400 whitespace-nowrap scale-90 origin-top-left mt-0.5 ml-6">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
+                                {/* 修正: whitespace-nowrapとscaleを削除し、自然な折り返しに */}
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-gray-100">
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -648,7 +649,8 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
                                 </div>
-                                <p className="text-[9px] sm:text-[10px] text-gray-400 mt-1 whitespace-nowrap tracking-tight ml-6">ログインすると、単語棚内のデータが自動で保存/同期されるようになります。</p>
+                                {/* 修正: whitespace-nowrapとscaleを削除 */}
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚内のデータが自動で保存/同期されるようになります。</p>
                             </div>
                             <div>
                                 {user ? (
@@ -672,8 +674,9 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
-                                <p className="text-[9px] sm:text-[10px] text-gray-400 mt-1 whitespace-nowrap tracking-tight ml-6">手動で、単語棚内のデータをローカル環境に保存/復元します。</p>
-                                <p className="text-[9px] text-gray-400 whitespace-nowrap scale-90 origin-top-left mt-0.5 ml-6">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
+                                {/* 修正: whitespace-nowrapとscaleを削除 */}
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">手動で、単語棚内のデータをローカル環境に保存/復元します。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
                             </div>
                             <div className="flex gap-3">
                                 <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1"><i className="fas fa-file-export text-lg"></i>保存 (DL)</button>
