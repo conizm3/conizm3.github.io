@@ -615,8 +615,8 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
-                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーの設定で、AI解説が追加されます。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存されます。</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-gray-100">
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -648,7 +648,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚内のデータが自動で保存/同期されるようになります。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚データが自動で保存/同期されるようになります。</p>
                             </div>
                             <div>
                                 {user ? (
@@ -672,7 +672,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">手動で、単語棚内のデータをローカル環境に保存/復元します。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">単語棚データをローカルに保存/復元します。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
                             </div>
                             <div className="flex gap-3">
@@ -710,7 +710,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.04</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.05</p>
                             </div>
                         </div>
                     </div>
@@ -1084,7 +1084,7 @@
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
                                 <div className="flex-1 flex flex-col justify-center items-center w-full">
-                                    <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
+                                    <h2 className="text-2xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{questionText}</h2>
                                     {testMode === 'en_ja' && (
                                         <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
                                             <i className="fas fa-volume-up"></i>
