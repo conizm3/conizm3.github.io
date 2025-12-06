@@ -313,8 +313,11 @@
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
 
+            // 修正: プロンプトに "spellCheck" を追加
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
+            "simpleTranslation": 最も一般的で頻度の高い日本語訳（単語〜短いフレーズ）。注意: 1. 'API'や'Browser'のような純粋な技術用語は、そのままカタカナや専門用語で訳してください。 2. ただし、'prompt'（迅速な vs コマンド入力）や'monitor'（監視する vs 画面）のように、一般的意味と技術的意味の両方を持つ多義語の場合は、**一般的な意味（日常・ビジネス）を優先**してください。
+            "spellCheck": 入力テキストに明らかなスペルミスがある場合は修正後の正しいスペルのみを出力し、ミスがない場合や固有名詞（例: Yasu）の場合は null を出力してください。
             "definition": 定義（日本語で簡潔に、10〜20語程度で）
             "exampleEn": 英語の例文1つ
             "exampleJa": 例文の日本語訳
@@ -615,8 +618,8 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーの設定で、AI解説が追加されます。</p>
-                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存されます。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-gray-100">
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -672,7 +675,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">単語棚データをローカルに保存/復元します。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">手動で、単語棚内のデータをローカル環境に保存/復元します。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
                             </div>
                             <div className="flex gap-3">
@@ -710,7 +713,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.0</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.1</p>
                             </div>
                         </div>
                     </div>
@@ -727,6 +730,9 @@
             const isDataRichRef = useRef(false);
             const isMounted = useRef(true);
             const inputRef = useRef(null);
+            
+            // 修正: レンダリング時にAPIキーの有無を確認
+            const hasApiKey = !!localStorage.getItem('gemini_apikey');
 
             useEffect(() => {
                 isMounted.current = true;
@@ -765,7 +771,18 @@
                             if (enriched) { newData = { ...newData, ...enriched }; hasUpdate = true; }
                             if (aiData) {
                                 if (aiData.error === "ERROR_API_KEY") openAlert('Gemini APIキーが無効のようです');
-                                else { newData = { ...newData, aiData: aiData }; hasUpdate = true; }
+                                else { 
+                                    newData = { ...newData, aiData: aiData }; 
+                                    // AIの簡易翻訳がある場合はメインの翻訳を上書きする
+                                    if (aiData.simpleTranslation) {
+                                        newData.translation = aiData.simpleTranslation;
+                                    }
+                                    // スペルチェックの通知
+                                    if (aiData.spellCheck) {
+                                        openAlert(`⚠️ もしかして: ${aiData.spellCheck} ?`);
+                                    }
+                                    hasUpdate = true; 
+                                }
                             }
                             if (hasUpdate) { setExternalResult(newData); onUpdateWord(newData); }
                         }).finally(() => { 
@@ -811,6 +828,14 @@
                         <form onSubmit={handleSearch} className="relative">
                             <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
+                            
+                            {/* 修正: APIキーがある場合のみロボットアイコンを表示 */}
+                            {hasApiKey && (
+                                <div className={`absolute top-2 w-12 h-12 flex items-center justify-center text-gray-300 pointer-events-none transition-all duration-300 ${term ? 'right-[6.5rem]' : 'right-[3.5rem]'}`}>
+                                    <i className="fas fa-robot"></i>
+                                </div>
+                            )}
+
                             {term && (
                                 <button type="button" onClick={() => {setTerm(''); inputRef.current.focus();}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600">
                                     <i className="fas fa-times"></i>
@@ -1084,7 +1109,7 @@
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
                                 <div className="flex-1 flex flex-col justify-center items-center w-full">
-                                    <h2 className="text-2xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{questionText}</h2>
+                                    <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
                                     {testMode === 'en_ja' && (
                                         <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
                                             <i className="fas fa-volume-up"></i>
