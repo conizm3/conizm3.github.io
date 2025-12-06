@@ -618,8 +618,8 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
-                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーの設定で、AI解説が追加されます。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存されます。</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-gray-100">
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -675,7 +675,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">手動で、単語棚内のデータをローカル環境に保存/復元します。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">単語棚データをローカルに保存/復元します。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
                             </div>
                             <div className="flex gap-3">
@@ -713,7 +713,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.1</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.04</p>
                             </div>
                         </div>
                     </div>
@@ -800,6 +800,63 @@
                     }
                 }
             };
+            
+            // サイレント更新用のEffect
+            useEffect(() => {
+                const performSilentUpdate = async () => {
+                    // 条件チェック: リストから遷移、データあり、AIデータなし、APIキーあり
+                    if (!isFromList || !externalResult || externalResult.aiData || !hasApiKey) {
+                        return;
+                    }
+
+                    try {
+                        const term = externalResult.word;
+                        const apiKey = localStorage.getItem('gemini_apikey');
+                        
+                        // 指示通り fetchRichData と fetchAIExplanation を実行
+                        // 並列実行で効率化
+                        const [coreData, aiData] = await Promise.all([
+                            fetchRichData(term),
+                            fetchAIExplanation(term, apiKey)
+                        ]);
+
+                        // AIデータが取れなかった場合は終了
+                        if (!aiData || aiData.error) return;
+                        
+                        if (!isMounted.current) return;
+
+                        // データ構築
+                        let newData = { ...coreData };
+                        
+                        // AIデータを統合
+                        newData.aiData = aiData;
+                        
+                        // 簡易翻訳があれば上書き
+                        if (aiData.simpleTranslation) {
+                            newData.translation = aiData.simpleTranslation;
+                        }
+
+                        // エンリッチメント（音声等）も再取得・統合
+                        const enriched = await fetchEnrichment(newData, term);
+                        if (enriched) {
+                            newData = { ...newData, ...enriched };
+                        }
+
+                        if (!isMounted.current) return;
+
+                        // 更新処理
+                        onUpdateWord(newData);
+                        setExternalResult(newData);
+                        setToast('AI解説を追加しました');
+
+                    } catch (e) {
+                        // サイレントエラーハンドリング
+                        console.log("Silent update failed silently:", e);
+                    }
+                };
+
+                performSilentUpdate();
+            }, [externalResult, isFromList, hasApiKey, onUpdateWord]);
 
             useEffect(() => { if (externalResult && resultRef.current) resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [externalResult]);
 
@@ -1109,7 +1166,7 @@
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
                                 <div className="flex-1 flex flex-col justify-center items-center w-full">
-                                    <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
+                                    <h2 className="text-2xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{questionText}</h2>
                                     {testMode === 'en_ja' && (
                                         <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
                                             <i className="fas fa-volume-up"></i>
