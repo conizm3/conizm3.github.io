@@ -269,10 +269,9 @@
             throw new Error("Dexie.js library failed to load.");
         }
         const db = new Dexie('WordloopDB');
-        // Version 2: deleted_words テーブルを追加して削除履歴を管理
         db.version(2).stores({
             words: '++id, word, nextReview, interval, repetition, efactor, addedAt',
-            deleted_words: 'word' // 削除された単語の履歴
+            deleted_words: 'word'
         });
 
         if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
@@ -280,45 +279,40 @@
         }
         const { useState, useEffect, useRef } = React;
 
+        // タイムアウト付きFetch関数
+        const fetchWithTimeout = async (url, options = {}, timeout = 4000) => {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+            try {
+                const response = await fetch(url, { ...options, signal: controller.signal });
+                clearTimeout(id);
+                return response;
+            } catch (error) {
+                clearTimeout(id);
+                throw error;
+            }
+        };
+
         const translateText = async (text, langPair = "en|ja") => {
-            if (!text) return "";
+            if (!text) return null;
             const [source, target] = langPair.split('|');
             try {
-                const res = await fetch(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`);
-                if (!res.ok) return text;
+                const res = await fetchWithTimeout(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`, {}, 4000);
+                if (!res.ok) return null;
                 const data = await res.json();
                 return data.translation;
             } catch (e) {
-                console.warn("Translation failed", e);
-                return text; 
+                console.warn("Translation failed or timed out", e);
+                return null; 
             }
         };
 
         const isJapanese = (text) => /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
 
-        const getPartOfSpeechJa = (text) => {
-            const map = {
-                noun: "名詞", verb: "動詞", adjective: "形容詞", adverb: "副詞",
-                pronoun: "代名詞", preposition: "前置詞", conjunction: "接続詞",
-                interjection: "間投詞", article: "冠詞", determiner: "限定詞",
-                "transitive verb": "他動詞", "intransitive verb": "自動詞",
-                "suru verb": "スル動詞", "translation": "翻訳", "common": "一般"
-            };
-            return text.split(/,\s*/).map(p => {
-                const lower = p.toLowerCase();
-                if (lower.includes('noun')) return map['noun'];
-                if (lower.includes('verb')) return map['verb'];
-                if (lower.includes('adjective')) return map['adjective'];
-                if (lower.includes('adverb')) return map['adverb'];
-                return map[lower] || p;
-            }).filter((x, i, self) => self.indexOf(x) === i).join('・');
-        };
-
         const fetchAIExplanation = async (term, apiKey) => {
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
 
-            // AI Tips プロンプト変更
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
             "definition": 定義（日本語で簡潔に、10〜20語程度で）
@@ -330,14 +324,14 @@
 
             const callApi = async (retryCount = 0) => {
                 try {
-                    const res = await fetch(url, {
+                    const res = await fetchWithTimeout(url, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                    });
+                    }, 5000); // AIは少し長めに待つ
 
                     if (!res.ok) {
-                        if ((res.status === 503 || res.status === 429) && retryCount < 5) {
+                        if ((res.status === 503 || res.status === 429) && retryCount < 2) {
                             const delay = Math.pow(2, retryCount) * 1000; 
                             await new Promise(resolve => setTimeout(resolve, delay));
                             return callApi(retryCount + 1);
@@ -365,7 +359,7 @@
                     }
                     return null;
                 } catch (e) {
-                    if (retryCount < 5) {
+                    if (retryCount < 2) {
                         const delay = Math.pow(2, retryCount) * 1000;
                         await new Promise(resolve => setTimeout(resolve, delay));
                         return callApi(retryCount + 1);
@@ -378,7 +372,8 @@
 
         const fetchJishoData = async (term) => {
             try {
-                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`);
+                // タイムアウトを4秒に設定
+                const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`, {}, 4000);
                 if (!res.ok) return null;
                 return await res.json();
             } catch (e) { return null; }
@@ -386,7 +381,7 @@
 
         const fetchFreeDictData = async (term) => {
             try {
-                const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`);
+                const res = await fetchWithTimeout(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`, {}, 4000);
                 if (!res.ok) return null;
                 return await res.json();
             } catch (e) { return null; }
@@ -406,11 +401,20 @@
                     tips = "Jisho.org";
                     if (isJpSearch) {
                         const entry = jishoData.data[0];
-                        const translated = await translateText(term, "ja|en");
-                        if (translated && translated !== term) searchWord = translated;
-                        else searchWord = entry.senses[0].english_definitions[0];
+                        // 日本語検索の場合、まず英語定義を取得
+                        const englishDef = entry.senses[0].english_definitions[0];
                         
-                        primaryTrans = term;
+                        // 念のため翻訳も試すが、失敗したらJishoの英語定義を使う
+                        const translated = await translateText(term, "ja|en");
+                        
+                        if (translated && translated !== term) {
+                            searchWord = translated;
+                        } else {
+                            // 翻訳失敗時はJishoの定義を使用
+                            searchWord = englishDef;
+                        }
+                        
+                        primaryTrans = term; // 表示上の「翻訳」部分（サブ）に日本語を入れる
                         pronunciation = entry.japanese[0].reading || "";
                         entry.senses.slice(0, 3).forEach(s => meanings.push({ partOfSpeech: s.parts_of_speech.join(', ') || 'Common', definitions: [{ ja: s.english_definitions.join('; '), en: "", exEn: "", exJa: "" }] }));
                     } else {
@@ -438,12 +442,20 @@
             } catch (e) {}
 
             if (!jishoFound) {
+                // Jishoで見つからなかった場合（タイムアウト含む）
                 if (!isJpSearch && !term.trim().includes(' ')) {
                      const fd = await fetchFreeDictData(term);
                      if (!fd || fd.length === 0) throw new Error("NOT_FOUND");
                 }
+                
+                // 翻訳を試みる
                 let trans = await translateText(term, isJpSearch ? "ja|en" : "en|ja");
-                if (!trans) throw new Error("NOT_FOUND");
+                
+                // 翻訳失敗（null）または入力と同じものが返ってきた場合
+                if (!trans || trans === term) {
+                    throw new Error("NOT_FOUND");
+                }
+                
                 searchWord = isJpSearch ? trans : term;
                 primaryTrans = isJpSearch ? term : trans;
                 meanings.push({ partOfSpeech: "Translation", definitions: [{ ja: primaryTrans, en: "", exEn: "", exJa: "" }] });
@@ -472,51 +484,36 @@
         };
 
         // --- 音声関連の処理 ---
-        // グローバル変数として利用可能な声をキャッシュ
         let englishVoices = [];
         const loadVoices = () => {
             const voices = window.speechSynthesis.getVoices();
-            // 英語系の声だけフィルタリング
             englishVoices = voices.filter(v => v.lang.startsWith('en'));
         };
 
-        // 初回ロード
         loadVoices();
-        // Chromeなどは非同期でロードされるためイベントリスナーが必要
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
             window.speechSynthesis.onvoiceschanged = loadVoices;
         }
 
         const speak = (text, audioUrl = null) => {
-            // APIなどに音声URLがあればそれを優先（ネイティブ音声）
             if (audioUrl) {
                 new Audio(audioUrl).play().catch(e => console.error("Audio play failed", e));
                 return;
             }
             if (!text) return;
-            
-            // 読み上げのキャンセル
             window.speechSynthesis.cancel();
-            
             const ut = new SpeechSynthesisUtterance(text);
             ut.lang = 'en-US';
-
-            // スマホ等で日本語読みになるのを防ぐため、明示的に英語のVoiceオブジェクトを探してセットする
             if (englishVoices.length === 0) loadVoices(); 
-            
-            // 優先順位: 1. Google US English (Android等) 2. en-US 3. en-GB 4. 任意の英語
             const preferredVoice = englishVoices.find(v => v.name === 'Google US English') || 
                                    englishVoices.find(v => v.lang === 'en-US') || 
                                    englishVoices.find(v => v.lang === 'en-GB') || 
                                    englishVoices[0];
-            
             if (preferredVoice) {
                 ut.voice = preferredVoice;
             }
-
             window.speechSynthesis.speak(ut);
         };
-        // --- 音声処理終了 ---
 
         const Toast = ({ msg, onClose }) => {
             useEffect(() => {
@@ -548,9 +545,16 @@
         };
 
         const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout }) => {
-            const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_apikey') || '');
+            const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_apikey') || '');
             const [testStatus, setTestStatus] = useState(null);
             const [saveStatus, setSaveStatus] = useState('idle');
+
+            useEffect(() => {
+                if (isOpen) {
+                    const storedKey = localStorage.getItem('gemini_apikey');
+                    if (storedKey) setApiKey(storedKey);
+                }
+            }, [isOpen]);
 
             const handleSaveKey = () => {
                 const cleanKey = apiKey.trim();
@@ -569,11 +573,11 @@
                 setTestStatus('testing');
                 try {
                     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${cleanKey}`;
-                    const res = await fetch(url, {
+                    const res = await fetchWithTimeout(url, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ contents: [{ parts: [{ text: "Hello" }] }] })
-                    });
+                    }, 5000);
                     
                     if (res.ok) {
                         setTestStatus('success');
@@ -593,15 +597,26 @@
                 <div className="fixed inset-0 bg-slate-100/90 z-[60] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
                     <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-md max-h-[90vh] overflow-y-auto border border-white">
                         <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-lg font-bold text-[#258FAF]">設定</h2>
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-lg font-bold text-[#258FAF]">設定</h2>
+                                <a href="https://maze-dracorex-e48.notion.site/wordrobe-Help-Guide-2bf04d09b6cc80248eebd66c3fcb284b" target="_blank" rel="noopener noreferrer" className="flex items-center mt-[1px] text-[#258FAF]/60 hover:text-[#258FAF] transition-colors">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                </a>
+                            </div>
                             <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
                         </div>
+                        
                         <div className="mb-6 border-b border-gray-200 pb-6">
                             <div className="flex flex-col mb-3">
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6">AIによる定義、解説が追加されます</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-gray-100">
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -633,7 +648,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6">Googleアカウントでログインして、データを同期します</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚内のデータが自動で保存/同期されるようになります。</p>
                             </div>
                             <div>
                                 {user ? (
@@ -657,7 +672,8 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6">現在のデータをファイルに保存、または復元します</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">手動で、単語棚内のデータをローカル環境に保存/復元します。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
                             </div>
                             <div className="flex gap-3">
                                 <button onClick={onExport} className="flex-1 neu-btn p-3 text-xs font-bold text-gray-600 hover:text-[#258FAF] flex flex-col items-center gap-1"><i className="fas fa-file-export text-lg"></i>保存 (DL)</button>
@@ -694,7 +710,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.02</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.0</p>
                             </div>
                         </div>
                     </div>
@@ -805,7 +821,7 @@
                     </div>
 
                     {loading && <div className="flex flex-col items-center justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#258FAF] mb-4"></div><p className="text-sm text-gray-500 animate-pulse">検索中...</p></div>}
-                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><i className="fas fa-search text-4xl"></i></div><p className="font-bold text-gray-500">単語を入力して検索</p></div>}
+                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><img src="https://wordrobe.cc/wordrobe/images/wordrobe-lptop.png" className="w-20 h-20 opacity-60 object-contain" alt="Search" /></div><p className="font-bold text-gray-500">単語を入力して検索</p></div>}
 
                     {currentData && (
                         <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8 allow-select">
@@ -892,26 +908,32 @@
             );
         };
 
-        const ListView = ({ savedWords, onDeleteWord, onSelectWord }) => {
+        const ListView = ({ savedWords, onDeleteWord, onSelectWord, onToggleMemorized }) => {
             if (!savedWords || savedWords.length === 0) {
                 return <div className="text-center py-20 text-gray-400 fade-in"><p>保存された単語はありません</p></div>;
             }
             return (
                 <div className="fade-in">
-                    <h2 className="text-xl font-bold mb-6 text-[#258FAF] ml-2">単語帳 <span className="text-sm font-normal text-gray-500 ml-2">({savedWords.length})</span></h2>
+                    <h2 className="text-xl font-bold mb-6 text-[#258FAF] ml-2">単語棚 <span className="text-sm font-normal text-gray-500 ml-2">({savedWords.length})</span></h2>
                     <div className="space-y-4">
-                        {savedWords.map((item, idx) => (
-                            <div key={idx} onClick={() => onSelectWord(item)} className="neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition">
-                                <div className="overflow-hidden">
-                                    <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
-                                    <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
+                        {savedWords.map((item, idx) => {
+                            const isMem = item.isMemorized || false;
+                            return (
+                                <div key={idx} onClick={() => onSelectWord(item)} className={`neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition ${isMem ? 'opacity-60 bg-gray-100 grayscale' : ''}`}>
+                                    <div className="overflow-hidden">
+                                        <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
+                                        <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button className={`neu-btn w-10 h-10 flex items-center justify-center rounded-full ml-2 shrink-0 relative z-10 ${isMem ? 'text-green-500 bg-white' : 'text-gray-300'}`} onClick={(e) => { e.stopPropagation(); onToggleMemorized(item); }}>
+                                            <i className="fas fa-check"></i>
+                                        </button>
+                                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
+                                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
+                                    </div>
                                 </div>
-                                <div className="flex gap-2">
-                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
-                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             );
@@ -929,8 +951,9 @@
             const cardRef = useRef(null);
 
             const startReview = () => {
-                if (savedWords.length === 0) return openAlert('単語帳が空です');
-                const shuffled = [...savedWords].sort(() => Math.random() - 0.5);
+                const validWords = savedWords.filter(w => !w.isMemorized);
+                if (validWords.length === 0) return openAlert('復習対象の単語がありません');
+                const shuffled = [...validWords].sort(() => Math.random() - 0.5);
                 setQueue(shuffled);
                 setIndex(0);
                 setIsFlipped(false);
@@ -1008,7 +1031,13 @@
             if (!isStarted) {
                 return (
                     <div className="h-full flex flex-col justify-center items-center text-center fade-in">
-                        <div className="neu-flat w-40 h-40 rounded-full flex items-center justify-center mb-8 text-[#258FAF]"><i className="fas fa-graduation-cap text-6xl"></i></div>
+                        <div className="neu-flat w-40 h-40 rounded-full flex items-center justify-center mb-8 text-[#258FAF]">
+                            <svg width="60" height="60" viewBox="0 0 24 24" fill="currentColor">
+                                <g transform="rotate(-45 12 12)">
+                                    <path fillRule="evenodd" clipRule="evenodd" d="M9 2H13L17 6V22H5V6L9 2ZM11 7.5C12.38 7.5 13.5 6.38 13.5 5C13.5 3.62 12.38 2.5 11 2.5C9.62 2.5 8.5 3.62 8.5 5C8.5 6.38 9.62 7.5 11 7.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                                </g>
+                            </svg>
+                        </div>
                         <h2 className="text-2xl font-bold mb-2 text-[#258FAF]">Review Mode</h2>
                         <div className="flex gap-4 mb-10 bg-white p-1 rounded-xl shadow-inner">
                             <button onClick={() => setTestMode('en_ja')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'en_ja' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>英 → 日</button>
@@ -1184,6 +1213,18 @@
                 } catch (e) {}
             };
 
+            const handleToggleMemorized = async (wordData) => {
+                const newStatus = !wordData.isMemorized;
+                const updatedWord = { ...wordData, isMemorized: newStatus };
+                setSavedWords(prev => prev.map(w => w.word === wordData.word ? updatedWord : w));
+                try {
+                    const wordInDb = await db.words.where('word').equals(wordData.word).first();
+                    if (wordInDb) {
+                        await db.words.update(wordInDb.id, { isMemorized: newStatus });
+                    }
+                } catch (e) {}
+            };
+
             const handleSaveWord = async (wordData) => {
                 try {
                     const exists = savedWords.some(w => w.word === wordData.word);
@@ -1280,17 +1321,33 @@
 
                     <main className="custom-main main-with-ad">
                         {tab === 'search' && <SearchView key={searchViewKey} savedWords={savedWords} onSaveWord={handleSaveWord} setToast={setToastMsg} externalResult={searchResult} setExternalResult={setSearchResult} isFromList={isFromList} onBack={handleBack} openAlert={openAlert} onUpdateWord={handleUpdateWord} />}
-                        {tab === 'list' && <ListView savedWords={savedWords} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} />}
+                        {tab === 'list' && <ListView savedWords={savedWords} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} onToggleMemorized={handleToggleMemorized} />}
                         {tab === 'review' && <ReviewView savedWords={savedWords} onFinish={resetToHome} openAlert={openAlert} />}
                     </main>
 
                     <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} user={user} onLogin={handleLogin} onLogout={handleLogout} />
                     <DialogModal isOpen={dialog.isOpen} type={dialog.type} message={dialog.message} onConfirm={dialog.onConfirm} onCancel={() => setDialog(prev => ({ ...prev, isOpen: false }))} />
                     
-                    <nav className="custom-nav neu-flat nav-with-ad nav-bottom">
+                    <nav className="custom-nav neu-flat nav-bottom">
                         <button onClick={() => resetToHome()} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'search' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'search' ? 'neu-pressed' : ''}`}><i className="fas fa-search text-lg"></i></div><span className="text-[10px] font-bold">検索</span></button>
-                        <button onClick={() => setTab('review')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'review' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'review' ? 'neu-pressed' : ''}`}><i className="fas fa-graduation-cap text-lg"></i></div><span className="text-[10px] font-bold">復習</span></button>
-                        <button onClick={() => setTab('list')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'list' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'list' ? 'neu-pressed' : ''}`}><i className="fas fa-book text-lg"></i></div><span className="text-[10px] font-bold">単語帳</span></button>
+                        <button onClick={() => setTab('review')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'review' ? 'tab-active' : 'tab-inactive'}`}>
+                            <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'review' ? 'neu-pressed' : ''}`}>
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                                    <g transform="rotate(-45 12 12)">
+                                        <path fillRule="evenodd" clipRule="evenodd" d="M9 2H13L17 6V22H5V6L9 2ZM11 7.5C12.38 7.5 13.5 6.38 13.5 5C13.5 3.62 12.38 2.5 11 2.5C9.62 2.5 8.5 3.62 8.5 5C8.5 6.38 9.62 7.5 11 7.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                                    </g>
+                                </svg>
+                            </div>
+                            <span className="text-[10px] font-bold">復習</span>
+                        </button>
+                        <button onClick={() => setTab('list')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'list' ? 'tab-active' : 'tab-inactive'}`}>
+                            <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'list' ? 'neu-pressed' : ''}`}>
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                                    <path fillRule="evenodd" clipRule="evenodd" d="M6 2H11V22H6C4.89543 22 4 21.1046 4 20V4C4 2.89543 4.89543 2 6 2ZM13 2H18C19.1046 2 20 2.89543 20 4V20C20 21.1046 19.1046 22 18 22H13V2ZM9 11C8.44772 11 8 11.4477 8 12C8 12.5523 8.44772 13 9 13C9.55228 13 10 12.5523 10 12C10 11.4477 9.55228 11 9 11ZM15 11C14.4477 11 14 11.4477 14 12C14 12.5523 14.4477 13 15 13C15.5523 13 16 12.5523 16 12C16 11.4477 15.5523 11 15 11Z" />
+                                </svg>
+                            </div>
+                            <span className="text-[10px] font-bold">単語棚</span>
+                        </button>
                     </nav>
 
                     {toastMsg && <Toast msg={toastMsg} onClose={() => setToastMsg(null)} />}
