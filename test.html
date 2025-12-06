@@ -908,6 +908,39 @@
             );
         };
 
+        const WordListItem = ({ item, onSelect, onDelete, onToggleMemorized }) => {
+            const clickTimeoutRef = useRef(null);
+
+            const handleClick = (e) => {
+                // Prevent default behavior if needed
+                if (clickTimeoutRef.current) {
+                    clearTimeout(clickTimeoutRef.current);
+                    clickTimeoutRef.current = null;
+                    onToggleMemorized(item);
+                } else {
+                    clickTimeoutRef.current = setTimeout(() => {
+                        onSelect(item);
+                        clickTimeoutRef.current = null;
+                    }, 250);
+                }
+            };
+
+            const isMem = item.isMemorized || false;
+
+            return (
+                <div onClick={handleClick} className={`neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition ${isMem ? 'opacity-40 grayscale bg-gray-100' : ''}`}>
+                    <div className="overflow-hidden mr-2">
+                        <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
+                        <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
+                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDelete(item.word); }}><i className="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            );
+        };
+
         const ListView = ({ savedWords, onDeleteWord, onSelectWord, onToggleMemorized }) => {
             if (!savedWords || savedWords.length === 0) {
                 return <div className="text-center py-20 text-gray-400 fade-in"><p>保存された単語はありません</p></div>;
@@ -916,26 +949,15 @@
                 <div className="fade-in">
                     <h2 className="text-xl font-bold mb-6 text-[#258FAF] ml-2">単語棚 <span className="text-sm font-normal text-gray-500 ml-2">({savedWords.length})</span></h2>
                     <div className="space-y-4">
-                        {savedWords.map((item, idx) => {
-                            const isMem = item.isMemorized || false;
-                            return (
-                                <div key={idx} onClick={() => onSelectWord(item)} className={`neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition ${isMem ? 'opacity-60 bg-gray-100 grayscale' : ''}`}>
-                                    <div className="overflow-hidden mr-2">
-                                        <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
-                                        <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
-                                    </div>
-                                    <div className="flex gap-2 items-center">
-                                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
-                                        <div className="flex flex-col md:flex-row gap-2">
-                                            <button className={`neu-btn w-10 h-10 flex items-center justify-center rounded-full shrink-0 relative z-10 ${isMem ? 'text-green-500 bg-white' : 'text-gray-300'}`} onClick={(e) => { e.stopPropagation(); onToggleMemorized(item); }}>
-                                                <i className="fas fa-check"></i>
-                                            </button>
-                                            <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                        {savedWords.map((item, idx) => (
+                            <WordListItem 
+                                key={idx} 
+                                item={item} 
+                                onSelect={onSelectWord} 
+                                onDelete={onDeleteWord} 
+                                onToggleMemorized={onToggleMemorized} 
+                            />
+                        ))}
                     </div>
                 </div>
             );
