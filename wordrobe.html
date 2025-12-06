@@ -615,7 +615,6 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
-                                {/* 修正: whitespace-nowrapとscaleを削除し、自然な折り返しに */}
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーの設定で、AI解説が追加されます。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存されます。</p>
                             </div>
@@ -649,7 +648,6 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
                                 </div>
-                                {/* 修正: whitespace-nowrapとscaleを削除 */}
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚データが自動で保存/同期されるようになります。</p>
                             </div>
                             <div>
@@ -674,7 +672,6 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
-                                {/* 修正: whitespace-nowrapとscaleを削除 */}
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">単語棚データをローカルに保存/復元します。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
                             </div>
@@ -713,7 +710,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.04</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.0</p>
                             </div>
                         </div>
                     </div>
@@ -733,7 +730,7 @@
 
             useEffect(() => {
                 isMounted.current = true;
-                if (inputRef.current) inputRef.current.focus();
+                if (inputRef.current && !isFromList) inputRef.current.focus();
                 return () => { isMounted.current = false; };
             }, []);
             
@@ -812,7 +809,7 @@
                 <div className="fade-in">
                     <div className="mb-8 mt-2">
                         <form onSubmit={handleSearch} className="relative">
-                            <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" autoFocus />
+                            <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
                             {term && (
                                 <button type="button" onClick={() => {setTerm(''); inputRef.current.focus();}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600">
@@ -831,7 +828,7 @@
                             {isFromList && <button onClick={onBack} className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-white text-gray-400 w-10 h-10 rounded-full shadow-md flex items-center justify-center z-20 hover:text-[#258FAF] transition-colors border border-gray-100"><i className="fas fa-times text-lg"></i></button>}
                             <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
                                 <div>
-                                    <h2 className="text-3xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{currentData.word}</h2>
+                                    <h2 className="text-2xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{currentData.word}</h2>
                                     {currentData.pronunciation && <div className="mb-2"><span className="text-xs md:text-sm text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded">{currentData.pronunciation}</span></div>}
                                     <p className="text-lg md:text-xl font-bold text-gray-700 mt-3">{currentData.translation}</p>
                                 </div>
@@ -911,7 +908,40 @@
             );
         };
 
-        const ListView = ({ savedWords, onDeleteWord, onSelectWord }) => {
+        const WordListItem = ({ item, onSelect, onDelete, onToggleMemorized }) => {
+            const clickTimeoutRef = useRef(null);
+
+            const handleClick = (e) => {
+                // Prevent default behavior if needed
+                if (clickTimeoutRef.current) {
+                    clearTimeout(clickTimeoutRef.current);
+                    clickTimeoutRef.current = null;
+                    onToggleMemorized(item);
+                } else {
+                    clickTimeoutRef.current = setTimeout(() => {
+                        onSelect(item);
+                        clickTimeoutRef.current = null;
+                    }, 250);
+                }
+            };
+
+            const isMem = item.isMemorized || false;
+
+            return (
+                <div onClick={handleClick} className={`neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition ${isMem ? 'opacity-40 grayscale bg-gray-100' : ''}`}>
+                    <div className="overflow-hidden mr-2">
+                        <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
+                        <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
+                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDelete(item.word); }}><i className="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            );
+        };
+
+        const ListView = ({ savedWords, onDeleteWord, onSelectWord, onToggleMemorized }) => {
             if (!savedWords || savedWords.length === 0) {
                 return <div className="text-center py-20 text-gray-400 fade-in"><p>保存された単語はありません</p></div>;
             }
@@ -920,16 +950,13 @@
                     <h2 className="text-xl font-bold mb-6 text-[#258FAF] ml-2">単語棚 <span className="text-sm font-normal text-gray-500 ml-2">({savedWords.length})</span></h2>
                     <div className="space-y-4">
                         {savedWords.map((item, idx) => (
-                            <div key={idx} onClick={() => onSelectWord(item)} className="neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition">
-                                <div className="overflow-hidden">
-                                    <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
-                                    <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
-                                    <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
-                                </div>
-                            </div>
+                            <WordListItem 
+                                key={idx} 
+                                item={item} 
+                                onSelect={onSelectWord} 
+                                onDelete={onDeleteWord} 
+                                onToggleMemorized={onToggleMemorized} 
+                            />
                         ))}
                     </div>
                 </div>
@@ -948,8 +975,9 @@
             const cardRef = useRef(null);
 
             const startReview = () => {
-                if (savedWords.length === 0) return openAlert('単語帳が空です');
-                const shuffled = [...savedWords].sort(() => Math.random() - 0.5);
+                const validWords = savedWords.filter(w => !w.isMemorized);
+                if (validWords.length === 0) return openAlert('復習対象の単語がありません');
+                const shuffled = [...validWords].sort(() => Math.random() - 0.5);
                 setQueue(shuffled);
                 setIndex(0);
                 setIsFlipped(false);
@@ -1056,7 +1084,7 @@
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
                                 <div className="flex-1 flex flex-col justify-center items-center w-full">
-                                    <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
+                                    <h2 className="text-2xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{questionText}</h2>
                                     {testMode === 'en_ja' && (
                                         <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
                                             <i className="fas fa-volume-up"></i>
@@ -1209,6 +1237,18 @@
                 } catch (e) {}
             };
 
+            const handleToggleMemorized = async (wordData) => {
+                const newStatus = !wordData.isMemorized;
+                const updatedWord = { ...wordData, isMemorized: newStatus };
+                setSavedWords(prev => prev.map(w => w.word === wordData.word ? updatedWord : w));
+                try {
+                    const wordInDb = await db.words.where('word').equals(wordData.word).first();
+                    if (wordInDb) {
+                        await db.words.update(wordInDb.id, { isMemorized: newStatus });
+                    }
+                } catch (e) {}
+            };
+
             const handleSaveWord = async (wordData) => {
                 try {
                     const exists = savedWords.some(w => w.word === wordData.word);
@@ -1305,7 +1345,7 @@
 
                     <main className="custom-main main-with-ad">
                         {tab === 'search' && <SearchView key={searchViewKey} savedWords={savedWords} onSaveWord={handleSaveWord} setToast={setToastMsg} externalResult={searchResult} setExternalResult={setSearchResult} isFromList={isFromList} onBack={handleBack} openAlert={openAlert} onUpdateWord={handleUpdateWord} />}
-                        {tab === 'list' && <ListView savedWords={savedWords} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} />}
+                        {tab === 'list' && <ListView savedWords={savedWords} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} onToggleMemorized={handleToggleMemorized} />}
                         {tab === 'review' && <ReviewView savedWords={savedWords} onFinish={resetToHome} openAlert={openAlert} />}
                     </main>
 
