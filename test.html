@@ -615,6 +615,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
+                                {/* 修正: whitespace-nowrapとscaleを削除し、自然な折り返しに */}
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
                             </div>
@@ -648,6 +649,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
                                 </div>
+                                {/* 修正: whitespace-nowrapとscaleを削除 */}
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚内のデータが自動で保存/同期されるようになります。</p>
                             </div>
                             <div>
@@ -672,6 +674,7 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
                                 </div>
+                                {/* 修正: whitespace-nowrapとscaleを削除 */}
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">手動で、単語棚内のデータをローカル環境に保存/復元します。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
                             </div>
@@ -710,7 +713,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.0</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.04</p>
                             </div>
                         </div>
                     </div>
@@ -920,16 +923,18 @@
                             const isMem = item.isMemorized || false;
                             return (
                                 <div key={idx} onClick={() => onSelectWord(item)} className={`neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition ${isMem ? 'opacity-60 bg-gray-100 grayscale' : ''}`}>
-                                    <div className="overflow-hidden">
+                                    <div className="overflow-hidden mr-2">
                                         <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
                                         <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button className={`neu-btn w-10 h-10 flex items-center justify-center rounded-full ml-2 shrink-0 relative z-10 ${isMem ? 'text-green-500 bg-white' : 'text-gray-300'}`} onClick={(e) => { e.stopPropagation(); onToggleMemorized(item); }}>
-                                            <i className="fas fa-check"></i>
-                                        </button>
-                                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
-                                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 ml-2 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
+                                    <div className="flex gap-2 items-center">
+                                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
+                                        <div className="flex flex-col md:flex-row gap-2">
+                                            <button className={`neu-btn w-10 h-10 flex items-center justify-center rounded-full shrink-0 relative z-10 ${isMem ? 'text-green-500 bg-white' : 'text-gray-300'}`} onClick={(e) => { e.stopPropagation(); onToggleMemorized(item); }}>
+                                                <i className="fas fa-check"></i>
+                                            </button>
+                                            <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDeleteWord(item.word); }}><i className="fas fa-trash"></i></button>
+                                        </div>
                                     </div>
                                 </div>
                             );
