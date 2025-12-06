@@ -313,8 +313,11 @@
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
 
+            // 修正: プロンプトの spellCheck 指示を強化
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
+            "simpleTranslation": 最も一般的で頻度の高い日本語訳（単語〜短いフレーズ）。注意: 1. 'API'や'Browser'のような純粋な技術用語は、そのままカタカナや専門用語で訳してください。 2. ただし、'prompt'（迅速な vs コマンド入力）や'monitor'（監視する vs 画面）のように、一般的意味と技術的意味の両方を持つ多義語の場合は、**一般的な意味（日常・ビジネス）を優先**してください。
+            "spellCheck": 入力テキストにスペルミスがある場合は修正後の正しいスペルのみを出力してください（単語単体の場合も含む。例: 'appel'→'apple'）。ミスがない場合や固有名詞（例: Yasu）の場合は null を出力してください。
             "definition": 定義（日本語で簡潔に、10〜20語程度で）
             "exampleEn": 英語の例文1つ
             "exampleJa": 例文の日本語訳
@@ -615,8 +618,8 @@
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーの設定で、AI解説が追加されます。</p>
-                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存されます。</p>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-gray-100">
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -710,7 +713,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.0</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.1</p>
                             </div>
                         </div>
                     </div>
@@ -727,6 +730,9 @@
             const isDataRichRef = useRef(false);
             const isMounted = useRef(true);
             const inputRef = useRef(null);
+            
+            // 修正: レンダリング時にAPIキーの有無を確認
+            const hasApiKey = !!localStorage.getItem('gemini_apikey');
 
             useEffect(() => {
                 isMounted.current = true;
@@ -734,19 +740,21 @@
                 return () => { isMounted.current = false; };
             }, []);
             
-            const handleSearch = async (e) => {
-                if (e) e.preventDefault();
-                if (!term.trim()) return;
-                
+            // 検索実行関数（再帰呼び出し用）
+            const executeSearch = async (searchTerm) => {
+                if (!searchTerm.trim()) return;
+
                 const currentId = ++searchIdRef.current;
                 isDataRichRef.current = false;
 
                 setLoading(true);
                 setIsEnriching(true); 
                 setExternalResult(null);
+                // 入力欄も更新
+                setTerm(searchTerm);
 
                 try {
-                    const coreData = await fetchRichData(term);
+                    const coreData = await fetchRichData(searchTerm);
                     onUpdateWord(coreData);
 
                     if (isMounted.current && currentId === searchIdRef.current) {
@@ -754,7 +762,7 @@
                         isDataRichRef.current = true;
                         setLoading(false);
 
-                        const enrichPromise = fetchEnrichment(coreData, term);
+                        const enrichPromise = fetchEnrichment(coreData, searchTerm);
                         const apiKey = localStorage.getItem('gemini_apikey');
                         const aiPromise = apiKey ? fetchAIExplanation(coreData.word, apiKey) : Promise.resolve(null);
 
@@ -763,9 +771,27 @@
                             let newData = { ...coreData };
                             let hasUpdate = false;
                             if (enriched) { newData = { ...newData, ...enriched }; hasUpdate = true; }
+                            
+                            // 修正: AIデータのスペルチェック処理を追加
                             if (aiData) {
-                                if (aiData.error === "ERROR_API_KEY") openAlert('Gemini APIキーが無効のようです');
-                                else { newData = { ...newData, aiData: aiData }; hasUpdate = true; }
+                                if (aiData.error === "ERROR_API_KEY") {
+                                    openAlert('Gemini APIキーが無効のようです');
+                                } else { 
+                                    // スペルチェックの通知と自動再検索
+                                    if (aiData.spellCheck) {
+                                        openAlert(`⚠️ もしかして: ${aiData.spellCheck} ?\n正しいスペルで検索し直します。`);
+                                        // 再検索を実行
+                                        executeSearch(aiData.spellCheck);
+                                        return; // ここで処理を中断して再帰呼び出しに任せる
+                                    }
+
+                                    newData = { ...newData, aiData: aiData }; 
+                                    // AIの簡易翻訳がある場合はメインの翻訳を上書きする
+                                    if (aiData.simpleTranslation) {
+                                        newData.translation = aiData.simpleTranslation;
+                                    }
+                                    hasUpdate = true; 
+                                }
                             }
                             if (hasUpdate) { setExternalResult(newData); onUpdateWord(newData); }
                         }).finally(() => { 
@@ -773,16 +799,107 @@
                         });
                     }
                 } catch (err) {
+                    // エラーハンドリング修正: AIキーがある場合は救済措置を試みる
                     if (isMounted.current && currentId === searchIdRef.current) {
-                        if (!isDataRichRef.current && !externalResult) {
+                        // AIキーを持っていて、かつ辞書で見つからなかった場合
+                        if (hasApiKey) {
+                             const apiKey = localStorage.getItem('gemini_apikey');
+                             // AIにスペルチェックだけ聞きに行く
+                             fetchAIExplanation(searchTerm, apiKey).then(aiData => {
+                                 if (isMounted.current && currentId === searchIdRef.current) {
+                                     if (aiData && aiData.spellCheck) {
+                                         // スペルミスが見つかった場合 -> 再検索へ
+                                         openAlert(`⚠️ もしかして: ${aiData.spellCheck} ?\n正しいスペルで検索し直します。`);
+                                         executeSearch(aiData.spellCheck);
+                                     } else {
+                                         // AIでもわからなかった場合 -> 通常のエラー表示
+                                         setLoading(false);
+                                         setIsEnriching(false);
+                                         if (err.message === "NOT_FOUND") openAlert('見つかりませんでした');
+                                         else openAlert('検索エラーが発生しました');
+                                     }
+                                 }
+                             }).catch(() => {
+                                 // AI通信エラー時 -> 通常のエラー表示
+                                 if (isMounted.current && currentId === searchIdRef.current) {
+                                     setLoading(false);
+                                     setIsEnriching(false);
+                                     if (err.message === "NOT_FOUND") openAlert('見つかりませんでした');
+                                     else openAlert('検索エラーが発生しました');
+                                 }
+                             });
+                        } else {
+                            // AIキーがない場合 -> 即座にエラー表示
+                            setLoading(false);
+                            setIsEnriching(false);
                             if (err.message === "NOT_FOUND") openAlert('見つかりませんでした');
                             else openAlert('検索エラーが発生しました');
                         }
-                        setLoading(false);
-                        setIsEnriching(false);
                     }
                 }
             };
+            
+            const handleSearch = async (e) => {
+                if (e) e.preventDefault();
+                executeSearch(term);
+            };
+            
+            // サイレント更新用のEffect
+            useEffect(() => {
+                const performSilentUpdate = async () => {
+                    // 条件チェック: リストから遷移、データあり、AIデータなし、APIキーあり
+                    if (!isFromList || !externalResult || externalResult.aiData || !hasApiKey) {
+                        return;
+                    }
+
+                    try {
+                        const term = externalResult.word;
+                        const apiKey = localStorage.getItem('gemini_apikey');
+                        
+                        // 指示通り fetchRichData と fetchAIExplanation を実行
+                        // 並列実行で効率化
+                        const [coreData, aiData] = await Promise.all([
+                            fetchRichData(term),
+                            fetchAIExplanation(term, apiKey)
+                        ]);
+
+                        // AIデータが取れなかった場合は終了
+                        if (!aiData || aiData.error) return;
+                        
+                        if (!isMounted.current) return;
+
+                        // データ構築
+                        let newData = { ...coreData };
+                        
+                        // AIデータを統合
+                        newData.aiData = aiData;
+                        
+                        // 簡易翻訳があれば上書き
+                        if (aiData.simpleTranslation) {
+                            newData.translation = aiData.simpleTranslation;
+                        }
+
+                        // エンリッチメント（音声等）も再取得・統合
+                        const enriched = await fetchEnrichment(newData, term);
+                        if (enriched) {
+                            newData = { ...newData, ...enriched };
+                        }
+
+                        if (!isMounted.current) return;
+
+                        // 更新処理
+                        onUpdateWord(newData);
+                        setExternalResult(newData);
+                        setToast('AI解説を追加しました');
+
+                    } catch (e) {
+                        // サイレントエラーハンドリング
+                        console.log("Silent update failed silently:", e);
+                    }
+                };
+
+                performSilentUpdate();
+            }, [externalResult, isFromList, hasApiKey, onUpdateWord]);
 
             useEffect(() => { if (externalResult && resultRef.current) resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [externalResult]);
 
@@ -811,6 +928,14 @@
                         <form onSubmit={handleSearch} className="relative">
                             <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
+                            
+                            {/* 修正: アイコンの位置を調整。入力ありの場合は 5.5rem、なしの場合は 3.5rem */}
+                            {hasApiKey && (
+                                <div className={`absolute top-2 w-12 h-12 flex items-center justify-center text-gray-300 pointer-events-none transition-all duration-300 ${term ? 'right-[5.5rem]' : 'right-[3.5rem]'}`}>
+                                    <i className="fas fa-robot"></i>
+                                </div>
+                            )}
+
                             {term && (
                                 <button type="button" onClick={() => {setTerm(''); inputRef.current.focus();}} className="absolute right-14 top-2 w-12 h-12 flex items-center justify-center text-gray-400 hover:text-gray-600">
                                     <i className="fas fa-times"></i>
@@ -1084,7 +1209,7 @@
                             <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
                                 <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
                                 <div className="flex-1 flex flex-col justify-center items-center w-full">
-                                    <h2 className="text-2xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{questionText}</h2>
+                                    <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
                                     {testMode === 'en_ja' && (
                                         <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
                                             <i className="fas fa-volume-up"></i>
@@ -1340,7 +1465,7 @@
                         <div className="flex-1 flex justify-center items-center" onClick={resetToHome}>
                             <img src="https://conizm3.github.io/wordrobe/images/wordrobe-top.png" alt="wordrobe" className="h-8 md:h-12" />
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} className="absolute right-4 text-gray-400 hover:text-[#258FAF]"><i className="fas fa-cog"></i></button>
+                        <button onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} className="absolute right-5 md:right-10 text-gray-400 hover:text-[#258FAF]"><i className="fas fa-cog"></i></button>
                     </header>
 
                     <main className="custom-main main-with-ad">
