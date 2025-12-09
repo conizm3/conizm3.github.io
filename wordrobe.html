@@ -548,23 +548,44 @@
         };
 
         const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout }) => {
-            const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_apikey') || '');
+            const [apiKey, setApiKey] = useState('');
+            const [isSaved, setIsSaved] = useState(false);
             const [testStatus, setTestStatus] = useState(null);
-            const [saveStatus, setSaveStatus] = useState('idle');
 
+            // モーダルが開いた時に保存状態を確認
             useEffect(() => {
                 if (isOpen) {
                     const storedKey = localStorage.getItem('gemini_apikey');
-                    if (storedKey) setApiKey(storedKey);
+                    if (storedKey) {
+                        setApiKey(storedKey);
+                        setIsSaved(true);
+                    } else {
+                        setApiKey('');
+                        setIsSaved(false);
+                    }
+                    setTestStatus(null);
                 }
             }, [isOpen]);
 
-            const handleSaveKey = () => {
-                const cleanKey = apiKey.trim();
-                localStorage.setItem('gemini_apikey', cleanKey);
-                setApiKey(cleanKey);
-                setSaveStatus('saved');
-                setTimeout(() => setSaveStatus('idle'), 2000);
+            // 保存または削除のアクション
+            const handleKeyAction = () => {
+                if (isSaved) {
+                    // ■ 削除モード（ゴミ箱）
+                    if (confirm("APIキーを削除しますか？\n（入力されたキーはこの端末から消去されます）")) {
+                        localStorage.removeItem('gemini_apikey');
+                        setApiKey('');
+                        setIsSaved(false);
+                        setTestStatus(null);
+                    }
+                } else {
+                    // ■ 設定モード（保存）
+                    const cleanKey = apiKey.trim();
+                    if (!cleanKey) return alert('APIキーを入力してください');
+                    
+                    localStorage.setItem('gemini_apikey', cleanKey);
+                    setApiKey(cleanKey);
+                    setIsSaved(true);
+                }
             };
             
             const handleTestConnection = async () => {
@@ -620,18 +641,31 @@
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
+                                <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※ネットカフェなど共有パソコンでは、使用後必ず削除してください</p>
                             </div>
                             <div className="bg-white p-4 rounded-xl border border-gray-100">
                                 <div className="flex flex-col sm:flex-row gap-2">
                                     <input 
-                                        type="text" 
+                                        type="password" 
                                         value={apiKey}
+                                        disabled={isSaved} // 保存済みなら入力不可
                                         onChange={(e) => setApiKey(e.target.value)}
-                                        placeholder="APIキーを入力" 
-                                        className="neu-input flex-1 p-2 text-sm min-w-0"
+                                        placeholder={isSaved ? "設定済み" : "APIキーを入力"} 
+                                        className={`neu-input flex-1 p-2 text-sm min-w-0 transition-colors ${isSaved ? "bg-gray-100 text-gray-400" : ""}`}
                                     />
-                                    <button onClick={handleSaveKey} className={`text-white px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-colors whitespace-nowrap ${saveStatus === 'saved' ? 'bg-[#EAB308]' : 'bg-[#258FAF]'}`}>
-                                        {saveStatus === 'saved' ? '設定完了' : '設定'}
+                                    <button 
+                                        onClick={handleKeyAction} 
+                                        className={`px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-colors whitespace-nowrap min-w-[80px] flex items-center justify-center gap-1 ${
+                                            isSaved ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-[#258FAF] text-white'
+                                        }`}
+                                    >
+                                        {isSaved ? (
+                                            <React.Fragment>
+                                                <i className="fas fa-trash"></i> 削除
+                                            </React.Fragment>
+                                        ) : (
+                                            '設定'
+                                        )}
                                     </button>
                                 </div>
                                 <div className="mt-3 flex justify-center items-center gap-4">
@@ -685,7 +719,6 @@
                         </div>
                         
                         <div className="mt-8 flex flex-col items-center gap-4">
-                            {/* Buy Me a Coffee Button - Inserted Here */}
                             <a 
                                 href="https://buymeacoffee.com/conizm" 
                                 target="_blank" 
@@ -713,7 +746,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.1</p>
+                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.2</p>
                             </div>
                         </div>
                     </div>
