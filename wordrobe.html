@@ -279,7 +279,6 @@
         }
         const { useState, useEffect, useRef } = React;
 
-        // タイムアウト付きFetch関数
         const fetchWithTimeout = async (url, options = {}, timeout = 4000) => {
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), timeout);
@@ -313,10 +312,9 @@
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
 
-            // 修正: プロンプトの spellCheck 指示を強化
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
-            "simpleTranslation": 最も一般的で頻度の高い日本語訳（単語〜短いフレーズ）。注意: 1. 'API'や'Browser'のような純粋な技術用語は、そのままカタカナや専門用語で訳してください。 2. ただし、'prompt'（迅速な vs コマンド入力）や'monitor'（監視する vs 画面）のように、一般的意味と技術的意味の両方を持つ多義語の場合は、**一般的な意味（日常・ビジネス）を優先**してください。
+            "simpleTranslation": 最も一般的で頻度の高い日本語訳（単語〜短いフレーズ）。注意: 1. 'API'や'Browser'のような純粋な技術用語は、そのままカタカナや専門用語で訳してください。 2. ただし、'prompt'（迅速な vs コマンド入力）や'monitor'（監視する vs 画面）のように、一般的意味と技術的意味の両方を持つ多義語の場合は、一般的な意味（日常・ビジネス）を優先してください。
             "spellCheck": 入力テキストにスペルミスがある場合は修正後の正しいスペルのみを出力してください（単語単体の場合も含む。例: 'appel'→'apple'）。ミスがない場合や固有名詞（例: Yasu）の場合は null を出力してください。
             "definition": 定義（日本語で簡潔に、10〜20語程度で）
             "exampleEn": 英語の例文1つ
@@ -331,7 +329,7 @@
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                    }, 5000); // AIは少し長めに待つ
+                    }, 5000);
 
                     if (!res.ok) {
                         if ((res.status === 503 || res.status === 429) && retryCount < 2) {
@@ -375,7 +373,6 @@
 
         const fetchJishoData = async (term) => {
             try {
-                // タイムアウトを4秒に設定
                 const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`, {}, 4000);
                 if (!res.ok) return null;
                 return await res.json();
@@ -404,20 +401,17 @@
                     tips = "Jisho.org";
                     if (isJpSearch) {
                         const entry = jishoData.data[0];
-                        // 日本語検索の場合、まず英語定義を取得
                         const englishDef = entry.senses[0].english_definitions[0];
                         
-                        // 念のため翻訳も試すが、失敗したらJishoの英語定義を使う
                         const translated = await translateText(term, "ja|en");
                         
                         if (translated && translated !== term) {
                             searchWord = translated;
                         } else {
-                            // 翻訳失敗時はJishoの定義を使用
                             searchWord = englishDef;
                         }
                         
-                        primaryTrans = term; // 表示上の「翻訳」部分（サブ）に日本語を入れる
+                        primaryTrans = term;
                         pronunciation = entry.japanese[0].reading || "";
                         entry.senses.slice(0, 3).forEach(s => meanings.push({ partOfSpeech: s.parts_of_speech.join(', ') || 'Common', definitions: [{ ja: s.english_definitions.join('; '), en: "", exEn: "", exJa: "" }] }));
                     } else {
@@ -445,16 +439,13 @@
             } catch (e) {}
 
             if (!jishoFound) {
-                // Jishoで見つからなかった場合（タイムアウト含む）
                 if (!isJpSearch && !term.trim().includes(' ')) {
                      const fd = await fetchFreeDictData(term);
                      if (!fd || fd.length === 0) throw new Error("NOT_FOUND");
                 }
                 
-                // 翻訳を試みる
                 let trans = await translateText(term, isJpSearch ? "ja|en" : "en|ja");
                 
-                // 翻訳失敗（null）または入力と同じものが返ってきた場合
                 if (!trans || trans === term) {
                     throw new Error("NOT_FOUND");
                 }
@@ -486,7 +477,6 @@
             } catch(e) { return null; }
         };
 
-        // --- 音声関連の処理 ---
         let englishVoices = [];
         const loadVoices = () => {
             const voices = window.speechSynthesis.getVoices();
@@ -509,9 +499,9 @@
             ut.lang = 'en-US';
             if (englishVoices.length === 0) loadVoices(); 
             const preferredVoice = englishVoices.find(v => v.name === 'Google US English') || 
-                                   englishVoices.find(v => v.lang === 'en-US') || 
-                                   englishVoices.find(v => v.lang === 'en-GB') || 
-                                   englishVoices[0];
+                                       englishVoices.find(v => v.lang === 'en-US') || 
+                                       englishVoices.find(v => v.lang === 'en-GB') || 
+                                       englishVoices[0];
             if (preferredVoice) {
                 ut.voice = preferredVoice;
             }
@@ -547,12 +537,52 @@
             );
         };
 
+        const TOSModal = ({ onAgree, isVisible }) => {
+    if (!isVisible) return null;
+
+    const tosUrl = "https://maze-dracorex-e48.notion.site/Terms-of-use-2c404d09b6cc803bad7bd012f0deed88?pvs=73"; 
+
+    return (
+        <div className="fixed inset-0 bg-slate-100/95 z-[100] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
+            <div className="neu-flat bg-[#F8FAFC] p-5 w-full max-w-xs text-center border border-white max-h-[80vh] overflow-y-auto">
+                <h2 className="text-lg font-bold text-[#258FAF] mb-3">ご利用規約への同意</h2>                
+                <div className="text-left text-xs text-gray-700 space-y-3 mb-5">
+                    <p>本アプリのご利用前に、以下の事項をご確認いただき、同意をお願いいたします。</p>
+                    <p className="font-bold text-[#258FAF]">【重要】知的財産権について</p>
+                    <div className="text-xs ml-2 border-l-2 border-[#258FAF]/50 pl-2 bg-[#258FAF]/5 py-2">
+                        本アプリを通じて提供されるすべてのコンテンツ（デザイン、データ等）の著作権を含む知的財産権は、開発者に帰属します。
+                        <br/>これらのコンテンツの無断での複製、転載、配布、二次利用は禁止いたします。
+                    </div>
+                    
+                    <p>本アプリの利用をもって、規約に同意したものとみなされます。</p>
+                </div>
+                
+                <div className="flex flex-col gap-3">
+                    <a href={tosUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] hover:text-[#1d6f8c] underline font-bold">
+                        <i className="fas fa-file-alt mr-1"></i> 利用規約全文を読む (外部サイトへ)
+                    </a>
+
+                    <button 
+                        onClick={onAgree} 
+                        className="bg-[#258FAF] text-white w-full py-2.5 rounded-xl font-bold text-xs shadow-lg active:scale-95 transition-transform"
+                    >
+                        同意してアプリを利用する
+                    </button>
+                    
+                    <p className="text-[9px] text-gray-400 mt-1">
+                        ボタンを押すことで、利用規約に同意したものとみなされます。
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
         const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout }) => {
             const [apiKey, setApiKey] = useState('');
             const [isSaved, setIsSaved] = useState(false);
             const [testStatus, setTestStatus] = useState(null);
 
-            // モーダルが開いた時に保存状態を確認
             useEffect(() => {
                 if (isOpen) {
                     const storedKey = localStorage.getItem('gemini_apikey');
@@ -567,10 +597,8 @@
                 }
             }, [isOpen]);
 
-            // 保存または削除のアクション
             const handleKeyAction = () => {
                 if (isSaved) {
-                    // ■ 削除モード（ゴミ箱）
                     if (confirm("APIキーを削除しますか？\n（入力されたキーはこの端末から消去されます）")) {
                         localStorage.removeItem('gemini_apikey');
                         setApiKey('');
@@ -578,7 +606,6 @@
                         setTestStatus(null);
                     }
                 } else {
-                    // ■ 設定モード（保存）
                     const cleanKey = apiKey.trim();
                     if (!cleanKey) return alert('APIキーを入力してください');
                     
@@ -648,7 +675,7 @@
                                     <input 
                                         type="password" 
                                         value={apiKey}
-                                        disabled={isSaved} // 保存済みなら入力不可
+                                        disabled={isSaved}
                                         onChange={(e) => setApiKey(e.target.value)}
                                         placeholder={isSaved ? "設定済み" : "APIキーを入力"} 
                                         className={`neu-input flex-1 p-2 text-sm min-w-0 transition-colors ${isSaved ? "bg-gray-100 text-gray-400" : ""}`}
@@ -698,7 +725,7 @@
                                     <div className="bg-white p-4 rounded-xl border border-gray-100 text-center">
                                         <button onClick={onLogin} className="w-full bg-white border border-gray-200 text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
                                             <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
-                                            Googleでログイン
+                                                Googleでログイン
                                         </button>
                                     </div>
                                 )}
@@ -746,7 +773,7 @@
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">v.1.1.2</p>
+                                <p className="text-[10px] text-gray-300 font-mono">&copy; 2025 conizm_ v.1.1.2</p>
                             </div>
                         </div>
                     </div>
@@ -764,7 +791,6 @@
             const isMounted = useRef(true);
             const inputRef = useRef(null);
             
-            // 修正: レンダリング時にAPIキーの有無を確認
             const hasApiKey = !!localStorage.getItem('gemini_apikey');
 
             useEffect(() => {
@@ -773,7 +799,6 @@
                 return () => { isMounted.current = false; };
             }, []);
             
-            // 検索実行関数（再帰呼び出し用）
             const executeSearch = async (searchTerm) => {
                 if (!searchTerm.trim()) return;
 
@@ -783,7 +808,6 @@
                 setLoading(true);
                 setIsEnriching(true); 
                 setExternalResult(null);
-                // 入力欄も更新
                 setTerm(searchTerm);
 
                 try {
@@ -805,21 +829,17 @@
                             let hasUpdate = false;
                             if (enriched) { newData = { ...newData, ...enriched }; hasUpdate = true; }
                             
-                            // 修正: AIデータのスペルチェック処理を追加
                             if (aiData) {
                                 if (aiData.error === "ERROR_API_KEY") {
                                     openAlert('Gemini APIキーが無効のようです');
                                 } else { 
-                                    // スペルチェックの通知と自動再検索
                                     if (aiData.spellCheck) {
                                         openAlert(`⚠️ もしかして: ${aiData.spellCheck} ?\n正しいスペルで検索し直します。`);
-                                        // 再検索を実行
                                         executeSearch(aiData.spellCheck);
-                                        return; // ここで処理を中断して再帰呼び出しに任せる
+                                        return;
                                     }
 
                                     newData = { ...newData, aiData: aiData }; 
-                                    // AIの簡易翻訳がある場合はメインの翻訳を上書きする
                                     if (aiData.simpleTranslation) {
                                         newData.translation = aiData.simpleTranslation;
                                     }
@@ -832,20 +852,15 @@
                         });
                     }
                 } catch (err) {
-                    // エラーハンドリング修正: AIキーがある場合は救済措置を試みる
                     if (isMounted.current && currentId === searchIdRef.current) {
-                        // AIキーを持っていて、かつ辞書で見つからなかった場合
                         if (hasApiKey) {
                              const apiKey = localStorage.getItem('gemini_apikey');
-                             // AIにスペルチェックだけ聞きに行く
                              fetchAIExplanation(searchTerm, apiKey).then(aiData => {
                                  if (isMounted.current && currentId === searchIdRef.current) {
                                      if (aiData && aiData.spellCheck) {
-                                         // スペルミスが見つかった場合 -> 再検索へ
                                          openAlert(`⚠️ もしかして: ${aiData.spellCheck} ?\n正しいスペルで検索し直します。`);
                                          executeSearch(aiData.spellCheck);
                                      } else {
-                                         // AIでもわからなかった場合 -> 通常のエラー表示
                                          setLoading(false);
                                          setIsEnriching(false);
                                          if (err.message === "NOT_FOUND") openAlert('見つかりませんでした');
@@ -853,7 +868,6 @@
                                      }
                                  }
                              }).catch(() => {
-                                 // AI通信エラー時 -> 通常のエラー表示
                                  if (isMounted.current && currentId === searchIdRef.current) {
                                      setLoading(false);
                                      setIsEnriching(false);
@@ -862,7 +876,6 @@
                                  }
                              });
                         } else {
-                            // AIキーがない場合 -> 即座にエラー表示
                             setLoading(false);
                             setIsEnriching(false);
                             if (err.message === "NOT_FOUND") openAlert('見つかりませんでした');
@@ -877,10 +890,8 @@
                 executeSearch(term);
             };
             
-            // サイレント更新用のEffect
             useEffect(() => {
                 const performSilentUpdate = async () => {
-                    // 条件チェック: リストから遷移、データあり、AIデータなし、APIキーあり
                     if (!isFromList || !externalResult || externalResult.aiData || !hasApiKey) {
                         return;
                     }
@@ -889,30 +900,23 @@
                         const term = externalResult.word;
                         const apiKey = localStorage.getItem('gemini_apikey');
                         
-                        // 指示通り fetchRichData と fetchAIExplanation を実行
-                        // 並列実行で効率化
                         const [coreData, aiData] = await Promise.all([
                             fetchRichData(term),
                             fetchAIExplanation(term, apiKey)
                         ]);
 
-                        // AIデータが取れなかった場合は終了
                         if (!aiData || aiData.error) return;
                         
                         if (!isMounted.current) return;
 
-                        // データ構築
                         let newData = { ...coreData };
                         
-                        // AIデータを統合
                         newData.aiData = aiData;
                         
-                        // 簡易翻訳があれば上書き
                         if (aiData.simpleTranslation) {
                             newData.translation = aiData.simpleTranslation;
                         }
 
-                        // エンリッチメント（音声等）も再取得・統合
                         const enriched = await fetchEnrichment(newData, term);
                         if (enriched) {
                             newData = { ...newData, ...enriched };
@@ -920,13 +924,11 @@
 
                         if (!isMounted.current) return;
 
-                        // 更新処理
                         onUpdateWord(newData);
                         setExternalResult(newData);
                         setToast('AI解説を追加しました');
 
                     } catch (e) {
-                        // サイレントエラーハンドリング
                         console.log("Silent update failed silently:", e);
                     }
                 };
@@ -962,7 +964,6 @@
                             <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語/フレーズを入力" />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
                             
-                            {/* 修正: アイコンの位置を調整。入力ありの場合は 5.5rem、なしの場合は 3.5rem */}
                             {hasApiKey && (
                                 <div className={`absolute top-2 w-12 h-12 flex items-center justify-center text-gray-300 pointer-events-none transition-all duration-300 ${term ? 'right-[5.5rem]' : 'right-[3.5rem]'}`}>
                                     <i className="fas fa-robot"></i>
@@ -996,7 +997,6 @@
                                 </div>
                             </div>
 
-                            {/* AI Tips (New Structure) */}
                             {currentData.aiData && (
                                 <div className="mb-6 fade-in">
                                     <div className="neu-pressed bg-[#258FAF]/5 p-4 rounded-xl border border-[#258FAF]/20 relative overflow-hidden">
@@ -1070,7 +1070,6 @@
             const clickTimeoutRef = useRef(null);
 
             const handleClick = (e) => {
-                // Prevent default behavior if needed
                 if (clickTimeoutRef.current) {
                     clearTimeout(clickTimeoutRef.current);
                     clickTimeoutRef.current = null;
@@ -1305,6 +1304,15 @@
             const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
             const [user, setUser] = useState(null);
             const [isCloudSynced, setIsCloudSynced] = useState(false);
+            
+            const [isFirstLaunch, setIsFirstLaunch] = useState(() => {
+                return localStorage.getItem('is_first_launch_v1') !== 'false';
+            });
+            
+            const handleAgreeTOS = () => {
+                localStorage.setItem('is_first_launch_v1', 'false');
+                setIsFirstLaunch(false);
+            };
 
             const openAlert = (msg) => setDialog({ isOpen: true, type: 'alert', message: msg, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
             const openConfirm = (msg, onConfirm) => setDialog({ isOpen: true, type: 'confirm', message: msg, onConfirm: () => { onConfirm(); setDialog(prev => ({ ...prev, isOpen: false })); } });
@@ -1321,18 +1329,15 @@
                                 if (doc.exists) {
                                     const cloudWords = doc.data().words || [];
                                     
-                                    // 削除済みリストと照合して同期
                                     await db.transaction('rw', db.words, db.deleted_words, async () => {
                                         const localWords = await db.words.toArray();
                                         const localWordMap = new Map(localWords.map(w => [w.word, w]));
                                         
-                                        // 削除済みリストを取得
                                         const deletedItems = await db.deleted_words.toArray();
                                         const deletedSet = new Set(deletedItems.map(d => d.word));
 
                                         const wordsToPut = [];
                                         for (const cw of cloudWords) {
-                                            // ローカルになく、かつ削除済みリストにもない場合のみ追加
                                             if (!localWordMap.has(cw.word) && !deletedSet.has(cw.word)) {
                                                 const { id, ...wordWithoutId } = cw;
                                                 wordsToPut.push(wordWithoutId);
@@ -1418,7 +1423,6 @@
                     } else {
                         const newWord = { ...wordData, addedAt: Date.now() };
                         
-                        // 保存処理：削除済みリストにあった場合は削除リストから除外（復活処理）
                         await db.deleted_words.delete(newWord.word).catch(() => {});
 
                         const id = await db.words.add(newWord); 
@@ -1433,7 +1437,6 @@
                     const wordInDb = await db.words.where('word').equals(word).first();
                     if(wordInDb) {
                         await db.words.delete(wordInDb.id);
-                        // 削除処理：削除済みリストに追加
                         await db.deleted_words.put({ word: word });
                     }
                     setSavedWords(prev => prev.filter(w => w.word !== word));
@@ -1492,16 +1495,22 @@
                 reader.readAsText(file);
             };
 
+            const uiDisabledClass = isFirstLaunch ? 'pointer-events-none opacity-50' : '';
+
+
             return (
                 <div className="h-screen-safe">
-                    <header className="custom-header neu-flat">
+                    
+                    {isFirstLaunch && <TOSModal isVisible={isFirstLaunch} onAgree={handleAgreeTOS} />}
+
+                    <header className={`custom-header neu-flat ${uiDisabledClass}`}>
                         <div className="flex-1 flex justify-center items-center" onClick={resetToHome}>
                             <img src="https://conizm3.github.io/wordrobe/images/wordrobe-top.png" alt="wordrobe" className="h-8 md:h-12" />
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} className="absolute right-5 md:right-10 text-gray-400 hover:text-[#258FAF]"><i className="fas fa-cog"></i></button>
                     </header>
 
-                    <main className="custom-main main-with-ad">
+                    <main className={`custom-main main-with-ad ${uiDisabledClass}`}>
                         {tab === 'search' && <SearchView key={searchViewKey} savedWords={savedWords} onSaveWord={handleSaveWord} setToast={setToastMsg} externalResult={searchResult} setExternalResult={setSearchResult} isFromList={isFromList} onBack={handleBack} openAlert={openAlert} onUpdateWord={handleUpdateWord} />}
                         {tab === 'list' && <ListView savedWords={savedWords} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} onToggleMemorized={handleToggleMemorized} />}
                         {tab === 'review' && <ReviewView savedWords={savedWords} onFinish={resetToHome} openAlert={openAlert} />}
@@ -1510,7 +1519,7 @@
                     <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} user={user} onLogin={handleLogin} onLogout={handleLogout} />
                     <DialogModal isOpen={dialog.isOpen} type={dialog.type} message={dialog.message} onConfirm={dialog.onConfirm} onCancel={() => setDialog(prev => ({ ...prev, isOpen: false }))} />
                     
-                    <nav className="custom-nav neu-flat nav-bottom">
+                    <nav className={`custom-nav neu-flat nav-bottom ${uiDisabledClass}`}>
                         <button onClick={() => resetToHome()} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'search' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'search' ? 'neu-pressed' : ''}`}><i className="fas fa-search text-lg"></i></div><span className="text-[10px] font-bold">検索</span></button>
                         <button onClick={() => setTab('review')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'review' ? 'tab-active' : 'tab-inactive'}`}>
                             <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'review' ? 'neu-pressed' : ''}`}>
