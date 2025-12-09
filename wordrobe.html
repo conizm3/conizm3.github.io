@@ -959,7 +959,7 @@
                 <div className="fade-in">
                     <div className="mb-8 mt-2">
                         <form onSubmit={handleSearch} className="relative">
-                            <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語を入力 (例 : rabbit / うさぎ)" />
+                            <input ref={inputRef} type="text" value={term} onChange={(e) => setTerm(e.target.value)} className="neu-input w-full p-4 pl-12 text-lg text-[#258FAF] placeholder-gray-400" placeholder="単語/フレーズを入力" />
                             <i className="fas fa-search absolute left-5 top-5 text-gray-400"></i>
                             
                             {/* 修正: アイコンの位置を調整。入力ありの場合は 5.5rem、なしの場合は 3.5rem */}
@@ -979,7 +979,7 @@
                     </div>
 
                     {loading && <div className="flex flex-col items-center justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#258FAF] mb-4"></div><p className="text-sm text-gray-500 animate-pulse">検索中...</p></div>}
-                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><img src="https://wordrobe.cc/wordrobe/images/wordrobe-lptop.png" className="w-20 h-20 opacity-60 object-contain" alt="Search" /></div><p className="font-bold text-gray-500">単語を入力して検索</p></div>}
+                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><img src="https://wordrobe.cc/wordrobe/images/wordrobe-lptop.png" className="w-20 h-20 opacity-60 object-contain" alt="Search" /></div><p className="font-bold text-gray-500"></p></div>}
 
                     {currentData && (
                         <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8 allow-select">
