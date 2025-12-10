@@ -872,11 +872,11 @@
                                     href="https://buymeacoffee.com/conizm" 
                                     target="_blank" 
                                     rel="noopener noreferrer"
-                                    className="bg-[#258FAF] text-white flex-1 group inline-flex justify-center items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium shadow-sm hover:opacity-90 transition-all duration-300 ease-out"
+                                    className="neu-btn flex-1 group inline-flex justify-center items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-gray-800 transition-all duration-300 ease-out"
                                 >
                                     <svg 
                                         xmlns="http://www.w3.org/2000/svg" 
-                                        className="w-5 h-5 text-white" 
+                                        className="w-5 h-5 text-gray-400 group-hover:text-amber-600 transition-colors duration-300" 
                                         viewBox="0 0 24 24" 
                                         fill="none" 
                                         stroke="currentColor" 
@@ -906,7 +906,7 @@
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
                                 <p className="text-[10px] text-gray-300 font-mono">
                                     &copy; 2025 conizm_ 
-                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.0</a>
+                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.6</a>
                                 </p>
                             </div>
                         </div>
@@ -919,6 +919,7 @@
             const [term, setTerm] = useState('');
             const [loading, setLoading] = useState(false);
             const [isEnriching, setIsEnriching] = useState(false); 
+            const [aiError, setAiError] = useState(false);
             const resultRef = useRef(null);
             const searchIdRef = useRef(0);
             const isDataRichRef = useRef(false);
@@ -943,6 +944,7 @@
                 setIsEnriching(true); 
                 setExternalResult(null);
                 setTerm(searchTerm);
+                setAiError(false);
 
                 try {
                     const coreData = await fetchRichData(searchTerm);
@@ -965,7 +967,7 @@
                             
                             if (aiData) {
                                 if (aiData.error === "ERROR_API_KEY") {
-                                    openAlert('Gemini APIキーが無効のようです');
+                                    setAiError(true);
                                 } else { 
                                     if (aiData.spellCheck) {
                                         openAlert(`⚠️ もしかして: ${aiData.spellCheck} ?\n正しいスペルで検索し直します。`);
@@ -979,8 +981,15 @@
                                     }
                                     hasUpdate = true; 
                                 }
+                            } else if (hasApiKey) {
+                                setAiError(true);
                             }
+
                             if (hasUpdate) { setExternalResult(newData); onUpdateWord(newData); }
+                        }).catch(() => {
+                             if (isMounted.current && currentId === searchIdRef.current && hasApiKey) {
+                                 setAiError(true);
+                             }
                         }).finally(() => { 
                              if (isMounted.current && currentId === searchIdRef.current) setIsEnriching(false); 
                         });
@@ -1039,7 +1048,10 @@
                             fetchAIExplanation(term, apiKey)
                         ]);
 
-                        if (!aiData || aiData.error) return;
+                        if (!aiData || aiData.error) {
+                             if (isMounted.current) setAiError(true);
+                             return;
+                        }
                         
                         if (!isMounted.current) return;
 
@@ -1061,8 +1073,10 @@
                         onUpdateWord(newData);
                         setExternalResult(newData);
                         setToast('AI解説を追加しました');
+                        setAiError(false);
 
                     } catch (e) {
+                        if (isMounted.current) setAiError(true);
                         console.log("Silent update failed silently:", e);
                     }
                 };
@@ -1159,6 +1173,25 @@
                                                     <p className="text-sm text-gray-600 mt-1 leading-relaxed">{currentData.aiData.supplement}</p>
                                                 </div>
                                             )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {aiError && (
+                                <div className="mb-6 fade-in">
+                                    <div className="neu-pressed bg-red-50 p-4 rounded-xl border border-red-100 relative overflow-hidden">
+                                        <div className="absolute top-0 left-0 w-1 h-full bg-red-400"></div>
+                                        <div className="flex gap-2 items-start pl-2 text-red-400">
+                                            <i className="fas fa-exclamation-triangle mt-1 shrink-0"></i>
+                                            <div className="text-xs space-y-1">
+                                                <p className="font-bold">AIからの返事を受け取れませんでした。</p>
+                                                <p>APIキーの設定や、使用上限（利用枠）に達していないか、一度ご確認ください。</p>
+                                                <div className="pt-1 opacity-80 text-[10px] leading-relaxed">
+                                                    <p className="font-bold">Unable to receive a response from AI.</p>
+                                                    <p>Please check your API key settings or if the usage limit has been reached.</p>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1525,7 +1558,6 @@
             const [folders, setFolders] = useState(() => {
                 try {
                     const local = localStorage.getItem('aitan_folders');
-                    // Changed default from 'MAIN' to 'main'
                     return local ? JSON.parse(local) : ['main'];
                 } catch (e) {
                     return ['main'];
