@@ -50,7 +50,6 @@
             touch-action: manipulation;
         }
 
-        /* 検索結果のテキスト選択を許可するクラス */
         .allow-select {
             -webkit-user-select: text !important;
             user-select: text !important;
@@ -103,7 +102,6 @@
             transition: all 0.3s ease;
         }
 
-        /* PC表示時のヘッダー調整 */
         @media (min-width: 768px) {
             header.custom-header {
                 padding-top: 24px !important;
@@ -189,6 +187,9 @@
 
         .slide-out-right { animation: slideOutRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
         @keyframes slideOutRight { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(50px); } }
+
+        .slide-up { animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         
         .card-flip { perspective: 1000px; }
         .card-inner { 
@@ -269,8 +270,8 @@
             throw new Error("Dexie.js library failed to load.");
         }
         const db = new Dexie('WordloopDB');
-        db.version(2).stores({
-            words: '++id, word, nextReview, interval, repetition, efactor, addedAt',
+        db.version(3).stores({
+            words: '++id, word, nextReview, interval, repetition, efactor, addedAt, folder',
             deleted_words: 'word'
         });
 
@@ -279,7 +280,7 @@
         }
         const { useState, useEffect, useRef } = React;
 
-        const fetchWithTimeout = async (url, options = {}, timeout = 4000) => {
+        const fetchWithTimeout = async (url, options = {}, timeout = 15000) => {
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), timeout);
             try {
@@ -314,7 +315,7 @@
 
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
-            "simpleTranslation": 最も一般的で頻度の高い日本語訳（単語〜短いフレーズ）。注意: 1. 'API'や'Browser'のような純粋な技術用語は、そのままカタカナや専門用語で訳してください。 2. ただし、'prompt'（迅速な vs コマンド入力）や'monitor'（監視する vs 画面）のように、一般的意味と技術的意味の両方を持つ多義語の場合は、一般的な意味（日常・ビジネス）を優先してください。
+            "simpleTranslation": 最も一般的で頻度の高い日本語訳（単語〜短いフレーズ）。注意: 1. 'API'や'Browser'のような純粋な技術用語は、そのままカタカナや専門用語で訳してください。 2. ただし、'prompt'（迅速な vs コマンド入力）や'monitor'（監視する vs 画面）のように、一般的な意味と技術的意味の両方を持つ多義語の場合は、一般的な意味（日常・ビジネス）を優先してください。
             "spellCheck": 入力テキストにスペルミスがある場合は修正後の正しいスペルのみを出力してください（単語単体の場合も含む。例: 'appel'→'apple'）。ミスがない場合や固有名詞（例: Yasu）の場合は null を出力してください。
             "definition": 定義（日本語で簡潔に、10〜20語程度で）
             "exampleEn": 英語の例文1つ
@@ -329,7 +330,7 @@
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                    }, 5000);
+                    }, 15000);
 
                     if (!res.ok) {
                         if ((res.status === 503 || res.status === 429) && retryCount < 2) {
@@ -499,9 +500,9 @@
             ut.lang = 'en-US';
             if (englishVoices.length === 0) loadVoices(); 
             const preferredVoice = englishVoices.find(v => v.name === 'Google US English') || 
-                                       englishVoices.find(v => v.lang === 'en-US') || 
-                                       englishVoices.find(v => v.lang === 'en-GB') || 
-                                       englishVoices[0];
+                                   englishVoices.find(v => v.lang === 'en-US') || 
+                                   englishVoices.find(v => v.lang === 'en-GB') || 
+                                   englishVoices[0];
             if (preferredVoice) {
                 ut.voice = preferredVoice;
             }
@@ -516,6 +517,128 @@
             return (
                 <div className="fixed bottom-32 left-1/2 toast-anim neu-flat px-6 py-3 rounded-full text-sm text-[#258FAF] font-bold z-[100] shadow-lg text-center whitespace-nowrap bg-white border border-gray-100">
                     {msg}
+                </div>
+            );
+        };
+
+        const FolderSelectModal = ({ isOpen, onClose, folders, onSelectFolder, onCreateFolder }) => {
+            const [newFolder, setNewFolder] = useState('');
+
+            if (!isOpen) return null;
+
+            const handleCreate = () => {
+                if (newFolder.trim()) {
+                    onCreateFolder(newFolder.trim());
+                    setNewFolder('');
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 z-[90] flex items-end justify-center">
+                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+                    <div className="relative bg-[#F8FAFC] w-full max-w-md rounded-t-3xl p-4 shadow-2xl slide-up border-t border-white/50 pb-8">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-2 z-10">
+                            <i className="fas fa-times text-lg"></i>
+                        </button>
+                        
+                        <h3 className="text-lg font-bold text-[#258FAF] mb-4 flex items-center gap-2 mt-2 ml-1">
+                            <i className="fas fa-folder-open"></i> フォルダを選択
+                        </h3>
+                        
+                        <div className="space-y-3 mb-6 max-h-[40vh] overflow-y-auto no-scrollbar py-1">
+                            {folders.map(folder => (
+                                <button key={folder} onClick={() => onSelectFolder(folder)} className="w-full text-left p-4 rounded-xl neu-flat hover:bg-gray-50 flex justify-between items-center transition-transform active:scale-[0.99]">
+                                    <span className="font-bold text-gray-700">{folder}</span>
+                                    <i className="fas fa-chevron-right text-gray-300 text-xs"></i>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex gap-2 w-full">
+                            <input 
+                                type="text" 
+                                value={newFolder}
+                                onChange={(e) => setNewFolder(e.target.value)}
+                                placeholder="新しいフォルダを作成..."
+                                className="neu-input flex-1 p-3 text-sm min-w-0"
+                            />
+                            <button onClick={handleCreate} disabled={!newFolder.trim()} className="bg-[#258FAF] text-white px-4 rounded-xl font-bold text-sm disabled:opacity-50 shadow-md whitespace-nowrap shrink-0">
+                                作成
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const FolderManagerModal = ({ isOpen, onClose, folders, onRename, onDelete }) => {
+            const [editingFolder, setEditingFolder] = useState(null);
+            const [editName, setEditName] = useState('');
+
+            if (!isOpen) return null;
+
+            const handleStartEdit = (folder) => {
+                setEditingFolder(folder);
+                setEditName(folder);
+            };
+
+            const handleSaveEdit = () => {
+                if (editName.trim() && editName !== editingFolder) {
+                    onRename(editingFolder, editName.trim());
+                }
+                setEditingFolder(null);
+                setEditName('');
+            };
+
+            const handleDelete = (folder) => {
+                onDelete(folder);
+            };
+
+            return (
+                <div className="fixed inset-0 z-[95] flex items-end justify-center">
+                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+                    <div className="relative bg-[#F8FAFC] w-full max-w-md rounded-t-3xl p-4 shadow-2xl slide-up border-t border-white/50 pb-8">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-2 z-10">
+                            <i className="fas fa-times text-lg"></i>
+                        </button>
+                        
+                        <h3 className="text-lg font-bold text-[#258FAF] mb-4 flex items-center gap-2 mt-2 ml-1">
+                            <i className="fas fa-cog"></i> フォルダ管理
+                        </h3>
+                        
+                        <div className="space-y-3 mb-6 max-h-[50vh] overflow-y-auto no-scrollbar py-1">
+                            {folders.map(folder => (
+                                <div key={folder} className="w-full text-left p-4 rounded-xl neu-flat flex justify-between items-center">
+                                    {editingFolder === folder ? (
+                                        <div className="flex-1 flex gap-2 mr-2">
+                                            <input 
+                                                type="text" 
+                                                value={editName} 
+                                                onChange={(e) => setEditName(e.target.value)}
+                                                className="neu-input flex-1 p-2 text-sm"
+                                                autoFocus
+                                            />
+                                            <button onClick={handleSaveEdit} className="text-[#258FAF] p-2"><i className="fas fa-check"></i></button>
+                                        </div>
+                                    ) : (
+                                        <span className="font-bold text-gray-700 flex-1">{folder}</span>
+                                    )}
+                                    
+                                    {folder !== 'main' && editingFolder !== folder && (
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleStartEdit(folder)} className="w-8 h-8 rounded-full neu-pressed text-gray-400 hover:text-[#258FAF] flex items-center justify-center">
+                                                <i className="fas fa-pen text-xs"></i>
+                                            </button>
+                                            <button onClick={() => handleDelete(folder)} className="w-8 h-8 rounded-full neu-pressed text-gray-400 hover:text-red-500 flex items-center justify-center">
+                                                <i className="fas fa-trash text-xs"></i>
+                                            </button>
+                                        </div>
+                                    )}
+                                    {folder === 'main' && <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">Default</span>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             );
         };
@@ -538,47 +661,47 @@
         };
 
         const TOSModal = ({ onAgree, isVisible }) => {
-    if (!isVisible) return null;
+            if (!isVisible) return null;
 
-    const tosUrl = "https://maze-dracorex-e48.notion.site/Terms-of-use-2c404d09b6cc803bad7bd012f0deed88?pvs=73"; 
+            const tosUrl = "https://maze-dracorex-e48.notion.site/Terms-of-use-2c404d09b6cc803bad7bd012f0deed88?pvs=73"; 
 
-    return (
-        <div className="fixed inset-0 bg-slate-100/95 z-[100] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
-            <div className="neu-flat bg-[#F8FAFC] p-5 w-full max-w-xs text-center border border-white max-h-[80vh] overflow-y-auto">
-                <h2 className="text-lg font-bold text-[#258FAF] mb-3">ご利用規約への同意</h2>                
-                <div className="text-left text-xs text-gray-700 space-y-3 mb-5">
-                    <p>本アプリのご利用前に、以下の事項をご確認いただき、同意をお願いいたします。</p>
-                    <p className="font-bold text-[#258FAF]">【重要】知的財産権について</p>
-                    <div className="text-xs ml-2 border-l-2 border-[#258FAF]/50 pl-2 bg-[#258FAF]/5 py-2">
-                        本アプリを通じて提供されるすべてのコンテンツ（デザイン、データ等）の著作権を含む知的財産権は、開発者に帰属します。
-                        <br/>これらのコンテンツの無断での複製、転載、配布、二次利用は禁止いたします。
+            return (
+                <div className="fixed inset-0 bg-slate-100/95 z-[100] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
+                    <div className="neu-flat bg-[#F8FAFC] p-5 w-full max-w-xs text-center border border-white max-h-[80vh] overflow-y-auto">
+                        <h2 className="text-lg font-bold text-[#258FAF] mb-3">ご利用規約への同意</h2>                
+                        <div className="text-left text-xs text-gray-700 space-y-3 mb-5">
+                            <p>本アプリのご利用前に、以下の事項をご確認いただき、同意をお願いいたします。</p>
+                            <p className="font-bold text-[#258FAF]">【重要】知的財産権について</p>
+                            <div className="text-xs ml-2 border-l-2 border-[#258FAF]/50 pl-2 bg-[#258FAF]/5 py-2">
+                                本アプリを通じて提供されるすべてのコンテンツ（デザイン、データ等）の著作権を含む知的財産権は、開発者に帰属します。
+                                <br/>これらのコンテンツの無断での複製、転載、配布、二次利用は禁止いたします。
+                            </div>
+                            
+                            <p>本アプリの利用をもって、規約に同意したものとみなされます。</p>
+                        </div>
+                        
+                        <div className="flex flex-col gap-3">
+                            <a href={tosUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] hover:text-[#1d6f8c] underline font-bold">
+                                <i className="fas fa-file-alt mr-1"></i> 利用規約全文を読む (外部サイトへ)
+                            </a>
+
+                            <button 
+                                onClick={onAgree} 
+                                className="bg-[#258FAF] text-white w-full py-2.5 rounded-xl font-bold text-xs shadow-lg active:scale-95 transition-transform"
+                            >
+                                同意してアプリを利用する
+                            </button>
+                            
+                            <p className="text-[9px] text-gray-400 mt-1">
+                                ボタンを押すことで、利用規約に同意したものとみなされます。
+                            </p>
+                        </div>
                     </div>
-                    
-                    <p>本アプリの利用をもって、規約に同意したものとみなされます。</p>
                 </div>
-                
-                <div className="flex flex-col gap-3">
-                    <a href={tosUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#258FAF] hover:text-[#1d6f8c] underline font-bold">
-                        <i className="fas fa-file-alt mr-1"></i> 利用規約全文を読む (外部サイトへ)
-                    </a>
+            );
+        };
 
-                    <button 
-                        onClick={onAgree} 
-                        className="bg-[#258FAF] text-white w-full py-2.5 rounded-xl font-bold text-xs shadow-lg active:scale-95 transition-transform"
-                    >
-                        同意してアプリを利用する
-                    </button>
-                    
-                    <p className="text-[9px] text-gray-400 mt-1">
-                        ボタンを押すことで、利用規約に同意したものとみなされます。
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-        const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout }) => {
+        const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout, openAlert, openConfirm }) => {
             const [apiKey, setApiKey] = useState('');
             const [isSaved, setIsSaved] = useState(false);
             const [testStatus, setTestStatus] = useState(null);
@@ -599,15 +722,15 @@
 
             const handleKeyAction = () => {
                 if (isSaved) {
-                    if (confirm("APIキーを削除しますか？\n（入力されたキーはこの端末から消去されます）")) {
+                    openConfirm("APIキーを削除しますか？\n（入力されたキーはこの端末から消去されます）", () => {
                         localStorage.removeItem('gemini_apikey');
                         setApiKey('');
                         setIsSaved(false);
                         setTestStatus(null);
-                    }
+                    });
                 } else {
                     const cleanKey = apiKey.trim();
-                    if (!cleanKey) return alert('APIキーを入力してください');
+                    if (!cleanKey) return openAlert('APIキーを入力してください');
                     
                     localStorage.setItem('gemini_apikey', cleanKey);
                     setApiKey(cleanKey);
@@ -618,7 +741,7 @@
             const handleTestConnection = async () => {
                 const cleanKey = apiKey.trim();
                 if (!cleanKey) {
-                    alert('APIキーを入力してください');
+                    openAlert('APIキーを入力してください');
                     return;
                 }
                 setTestStatus('testing');
@@ -628,18 +751,18 @@
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ contents: [{ parts: [{ text: "Hello" }] }] })
-                    }, 5000);
+                    }, 15000);
                     
                     if (res.ok) {
                         setTestStatus('success');
-                        alert('接続成功！\nAPIは正しく動作しています。');
+                        openAlert('接続成功！\nAPIは正しく動作しています。');
                     } else {
                         setTestStatus('error');
-                        alert('接続エラー');
+                        openAlert('接続エラー');
                     }
                 } catch (e) {
                     setTestStatus('error');
-                    alert(`ネットワークエラー\n${e.message}`);
+                    openAlert(`ネットワークエラー\n${e.message}`);
                 }
             };
 
@@ -664,13 +787,13 @@
                         <div className="mb-6 border-b border-gray-200 pb-6">
                             <div className="flex flex-col mb-3">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot"></i> AI機能設定 (Gemini)</h3>
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot text-gray-500"></i> AI機能設定 (Gemini)</h3>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※ネットカフェなど共有パソコンでは、使用後必ず削除してください</p>
                             </div>
-                            <div className="bg-white p-4 rounded-xl border border-gray-100">
+                            <div className="neu-flat p-4 rounded-xl">
                                 <div className="flex flex-col sm:flex-row gap-2">
                                     <input 
                                         type="password" 
@@ -710,7 +833,7 @@
                         <div className="mb-6 border-b border-gray-200 pb-6">
                             <div className="flex flex-col mb-3">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud"></i> クラウド同期</h3>
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud text-gray-500"></i> クラウド同期</h3>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚データが自動で保存/同期されるようになります。</p>
                             </div>
@@ -722,19 +845,17 @@
                                         <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
                                     </div>
                                 ) : (
-                                    <div className="bg-white p-4 rounded-xl border border-gray-100 text-center">
-                                        <button onClick={onLogin} className="w-full bg-white border border-gray-200 text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
-                                            <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
-                                                Googleでログイン
-                                        </button>
-                                    </div>
+                                    <button onClick={onLogin} className="w-full neu-btn text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
+                                        <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
+                                        Googleでログイン
+                                    </button>
                                 )}
                             </div>
                         </div>
                         <div>
                             <div className="flex flex-col mb-3">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save"></i> ローカルバックアップ</h3>
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save text-gray-500"></i> ローカルバックアップ</h3>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">単語棚データをローカルに保存/復元します。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
@@ -746,34 +867,47 @@
                         </div>
                         
                         <div className="mt-8 flex flex-col items-center gap-4">
-                            <a 
-                                href="https://buymeacoffee.com/conizm" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="group inline-flex items-center gap-2.5 px-4 py-2 rounded-xl text-sm font-medium text-gray-600 bg-white border border-gray-200 shadow-sm hover:bg-gray-50 hover:text-gray-800 transition-all duration-300 ease-out"
-                            >
-                                <svg 
-                                    xmlns="http://www.w3.org/2000/svg" 
-                                    className="w-5 h-5 text-gray-400 group-hover:text-amber-600 transition-colors duration-300" 
-                                    viewBox="0 0 24 24" 
-                                    fill="none" 
-                                    stroke="currentColor" 
-                                    strokeWidth="2" 
-                                    strokeLinecap="round" 
-                                    strokeLinejoin="round"
+                            <div className="flex gap-3 w-full">
+                                <a 
+                                    href="https://buymeacoffee.com/conizm" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="bg-[#258FAF] text-white flex-1 group inline-flex justify-center items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-bold shadow-sm hover:opacity-90 transition-all duration-300 ease-out"
                                 >
-                                    <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
-                                    <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
-                                    <path d="M6 1c0 2 2 2 2 4" opacity="0.7" />
-                                    <path d="M10 1c0 2 2 2 2 4" opacity="0.9" />
-                                    <path d="M14 1c0 2 2 2 2 4" opacity="0.7" />
-                                </svg>
-                                <span className="tracking-wide">開発者にコーヒーを贈る</span>
-                            </a>
+                                    <svg 
+                                        xmlns="http://www.w3.org/2000/svg" 
+                                        className="w-5 h-5 text-white" 
+                                        viewBox="0 0 24 24" 
+                                        fill="none" 
+                                        stroke="currentColor" 
+                                        strokeWidth="2" 
+                                        strokeLinecap="round" 
+                                        strokeLinejoin="round"
+                                    >
+                                        <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
+                                        <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
+                                        <path d="M6 1c0 2 2 2 2 4" opacity="0.7" />
+                                        <path d="M10 1c0 2 2 2 2 4" opacity="0.9" />
+                                        <path d="M14 1c0 2 2 2 2 4" opacity="0.7" />
+                                    </svg>
+                                    <span className="tracking-wide font-bold">Buy Me a Coffee</span>
+                                </a>
+                                <a 
+                                    href="https://www.instagram.com/conizm_/" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="neu-btn w-12 h-12 flex items-center justify-center rounded-xl text-[#258FAF] hover:text-[#C13584] transition-colors duration-300"
+                                >
+                                    <i className="fab fa-instagram text-2xl"></i>
+                                </a>
+                            </div>
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
-                                <p className="text-[10px] text-gray-300 font-mono">&copy; 2025 conizm_ v.1.1.2</p>
+                                <p className="text-[10px] text-gray-300 font-mono">
+                                    &copy; 2025 conizm_ 
+                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.0</a>
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -785,6 +919,7 @@
             const [term, setTerm] = useState('');
             const [loading, setLoading] = useState(false);
             const [isEnriching, setIsEnriching] = useState(false); 
+            const [aiError, setAiError] = useState(null);
             const resultRef = useRef(null);
             const searchIdRef = useRef(0);
             const isDataRichRef = useRef(false);
@@ -809,6 +944,7 @@
                 setIsEnriching(true); 
                 setExternalResult(null);
                 setTerm(searchTerm);
+                setAiError(null);
 
                 try {
                     const coreData = await fetchRichData(searchTerm);
@@ -831,7 +967,7 @@
                             
                             if (aiData) {
                                 if (aiData.error === "ERROR_API_KEY") {
-                                    openAlert('Gemini APIキーが無効のようです');
+                                    setAiError('AI接続エラー。\nAPIキーが無効のようです。');
                                 } else { 
                                     if (aiData.spellCheck) {
                                         openAlert(`⚠️ もしかして: ${aiData.spellCheck} ?\n正しいスペルで検索し直します。`);
@@ -845,8 +981,15 @@
                                     }
                                     hasUpdate = true; 
                                 }
+                            } else if (hasApiKey) {
+                                setAiError('AI接続エラー。\nAPIキーが間違っているか、使用上限などの関係でAIに接続できません。');
                             }
+
                             if (hasUpdate) { setExternalResult(newData); onUpdateWord(newData); }
+                        }).catch(() => {
+                             if (isMounted.current && currentId === searchIdRef.current && hasApiKey) {
+                                 setAiError('AI接続エラー。\nAPIキーが間違っているか、使用上限などの関係でAIに接続できません。');
+                             }
                         }).finally(() => { 
                              if (isMounted.current && currentId === searchIdRef.current) setIsEnriching(false); 
                         });
@@ -905,7 +1048,10 @@
                             fetchAIExplanation(term, apiKey)
                         ]);
 
-                        if (!aiData || aiData.error) return;
+                        if (!aiData || aiData.error) {
+                             if (isMounted.current) setAiError('AI接続エラー。\nAPIキーが間違っているか、使用上限などの関係でAIに接続できません。');
+                             return;
+                        }
                         
                         if (!isMounted.current) return;
 
@@ -927,8 +1073,10 @@
                         onUpdateWord(newData);
                         setExternalResult(newData);
                         setToast('AI解説を追加しました');
+                        setAiError(null);
 
                     } catch (e) {
+                        if (isMounted.current) setAiError('AI接続エラー。\nAPIキーが間違っているか、使用上限などの関係でAIに接続できません。');
                         console.log("Silent update failed silently:", e);
                     }
                 };
@@ -980,7 +1128,7 @@
                     </div>
 
                     {loading && <div className="flex flex-col items-center justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#258FAF] mb-4"></div><p className="text-sm text-gray-500 animate-pulse">検索中...</p></div>}
-                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><img src="https://wordrobe.cc/wordrobe/images/wordrobe-lptop.png" className="w-20 h-20 opacity-60 object-contain" alt="Search" /></div><p className="font-bold text-gray-500"></p></div>}
+                    {!loading && !currentData && <div className="text-center py-20 opacity-40 select-none"><div className="neu-flat w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 text-[#258FAF]"><img src="https://conizm3.github.io/wordrobe/images/wordrobe-lptop.png" className="w-20 h-20 opacity-60 object-contain" alt="Search" /></div><p className="font-bold text-gray-500"></p></div>}
 
                     {currentData && (
                         <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8 allow-select">
@@ -1025,6 +1173,25 @@
                                                     <p className="text-sm text-gray-600 mt-1 leading-relaxed">{currentData.aiData.supplement}</p>
                                                 </div>
                                             )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {aiError && (
+                                <div className="mb-6 fade-in">
+                                    <div className="neu-pressed bg-red-50 p-4 rounded-xl border border-red-100 relative overflow-hidden">
+                                        <div className="absolute top-0 left-0 w-1 h-full bg-red-400"></div>
+                                        <div className="flex gap-2 items-start pl-2 text-red-400">
+                                            <i className="fas fa-exclamation-triangle mt-1 shrink-0"></i>
+                                            <div className="text-xs space-y-1">
+                                                <p className="font-bold">AIからの返事を受け取れませんでした。</p>
+                                                <p>APIキーの設定や、使用上限（利用枠）に達していないか、一度ご確認ください。</p>
+                                                <div className="pt-1 opacity-80 text-[10px] leading-relaxed">
+                                                    <p className="font-bold">Unable to receive a response from AI.</p>
+                                                    <p>Please check your API key settings or if the usage limit has been reached.</p>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1089,6 +1256,11 @@
                     <div className="overflow-hidden mr-2">
                         <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
                         <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
+                        {item.folder && (
+                            <div className="text-[10px] text-gray-400 mt-1 bg-gray-100 inline-block px-2 py-0.5 rounded-md">
+                                <i className="fas fa-folder mr-1"></i>{item.folder}
+                            </div>
+                        )}
                     </div>
                     <div className="flex gap-2 items-center">
                         <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
@@ -1098,15 +1270,56 @@
             );
         };
 
-        const ListView = ({ savedWords, onDeleteWord, onSelectWord, onToggleMemorized }) => {
+        const ListView = ({ savedWords, folders, onDeleteWord, onSelectWord, onToggleMemorized, onManageFolders }) => {
+            const [selectedFolder, setSelectedFolder] = useState('ALL');
+            const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+
+            const displayedWords = selectedFolder === 'ALL' 
+                ? savedWords 
+                : savedWords.filter(w => w.folder === selectedFolder);
+
             if (!savedWords || savedWords.length === 0) {
                 return <div className="text-center py-20 text-gray-400 fade-in"><p>保存された単語はありません</p></div>;
             }
+            
             return (
                 <div className="fade-in">
-                    <h2 className="text-xl font-bold mb-6 text-[#258FAF] ml-2">単語棚 <span className="text-sm font-normal text-gray-500 ml-2">({savedWords.length})</span></h2>
+                    <div className="flex justify-between items-center mb-4 relative">
+                        <h2 className="text-xl font-bold text-[#258FAF] ml-2">単語棚 <span className="text-sm font-normal text-gray-500 ml-1">({displayedWords.length})</span></h2>
+                        <div className="flex items-center">
+                            <div className="relative">
+                                <button onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)} className="text-gray-400 hover:text-[#258FAF] p-2 flex items-center gap-1">
+                                    <span className="text-xs font-bold">{selectedFolder === 'ALL' ? 'ALL' : selectedFolder}</span>
+                                    <i className="fas fa-filter"></i>
+                                </button>
+                                {isFilterMenuOpen && (
+                                    <div className="absolute top-full right-0 mt-2 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden w-40 z-30 fade-in">
+                                        <button 
+                                            onClick={() => { setSelectedFolder('ALL'); setIsFilterMenuOpen(false); }}
+                                            className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${selectedFolder === 'ALL' ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                        >
+                                            ALL
+                                        </button>
+                                        {folders.map(folder => (
+                                            <button 
+                                                key={folder} 
+                                                onClick={() => { setSelectedFolder(folder); setIsFilterMenuOpen(false); }}
+                                                className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${selectedFolder === folder ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                            >
+                                                <i className="fas fa-folder mr-2 text-gray-300"></i>{folder}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={onManageFolders} className="text-gray-400 hover:text-[#258FAF] p-2">
+                                <i className="fas fa-cog"></i>
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="space-y-4">
-                        {savedWords.map((item, idx) => (
+                        {displayedWords.map((item, idx) => (
                             <WordListItem 
                                 key={idx} 
                                 item={item} 
@@ -1115,24 +1328,35 @@
                                 onToggleMemorized={onToggleMemorized} 
                             />
                         ))}
+                        {displayedWords.length === 0 && (
+                            <div className="text-center py-10 text-gray-400 text-sm">
+                                このフォルダは空です
+                            </div>
+                        )}
                     </div>
                 </div>
             );
         };
 
-        const ReviewView = ({ savedWords, onFinish, openAlert }) => {
+        const ReviewView = ({ savedWords, folderList, onFinish, openAlert }) => {
             const [isStarted, setIsStarted] = useState(false);
             const [testMode, setTestMode] = useState('en_ja'); 
+            const [targetFolder, setTargetFolder] = useState('ALL');
             const [queue, setQueue] = useState([]);
             const [index, setIndex] = useState(0);
             const [isFlipped, setIsFlipped] = useState(false);
             const [isExiting, setIsExiting] = useState(false);
             const [isSwipeAction, setIsSwipeAction] = useState(null); 
+            const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
             const touchStartX = useRef(null);
             const cardRef = useRef(null);
 
             const startReview = () => {
-                const validWords = savedWords.filter(w => !w.isMemorized);
+                const validWords = savedWords.filter(w => {
+                    const matchesFolder = targetFolder === 'ALL' || w.folder === targetFolder;
+                    return matchesFolder && !w.isMemorized;
+                });
+
                 if (validWords.length === 0) return openAlert('復習対象の単語がありません');
                 const shuffled = [...validWords].sort(() => Math.random() - 0.5);
                 setQueue(shuffled);
@@ -1212,6 +1436,7 @@
             if (!isStarted) {
                 return (
                     <div className="h-full flex flex-col justify-center items-center text-center fade-in">
+                        <h2 className="text-2xl font-bold mb-4 text-[#258FAF]">Review Mode</h2>
                         <div className="neu-flat w-40 h-40 rounded-full flex items-center justify-center mb-8 text-[#258FAF]">
                             <svg width="60" height="60" viewBox="0 0 24 24" fill="currentColor">
                                 <g transform="rotate(-45 12 12)">
@@ -1219,12 +1444,46 @@
                                 </g>
                             </svg>
                         </div>
-                        <h2 className="text-2xl font-bold mb-2 text-[#258FAF]">Review Mode</h2>
-                        <div className="flex gap-4 mb-10 bg-white p-1 rounded-xl shadow-inner">
-                            <button onClick={() => setTestMode('en_ja')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'en_ja' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>英 → 日</button>
-                            <button onClick={() => setTestMode('ja_en')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'ja_en' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>日 → 英</button>
+                        
+                        <div className="flex gap-4 mb-4 bg-white p-1 rounded-lg shadow-inner w-72">
+                            <button onClick={() => setTestMode('en_ja')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'en_ja' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>英 → 日</button>
+                            <button onClick={() => setTestMode('ja_en')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'ja_en' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>日 → 英</button>
                         </div>
-                        <button onClick={startReview} className="bg-[#258FAF] text-white px-10 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">テストを開始</button>
+
+                        <div className="relative mb-8 w-72 z-20">
+                            <button 
+                                onClick={() => setIsFolderMenuOpen(!isFolderMenuOpen)}
+                                className="w-full neu-flat text-gray-700 font-bold py-3 px-4 rounded-lg flex items-center justify-between text-xs active:scale-95 transition-transform"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <i className="fas fa-folder text-[#258FAF]"></i>
+                                    {targetFolder === 'ALL' ? 'すべてのフォルダ' : targetFolder}
+                                </span>
+                                <i className={`fas fa-chevron-down transition-transform ${isFolderMenuOpen ? 'rotate-180' : ''} text-gray-400`}></i>
+                            </button>
+                            
+                            {isFolderMenuOpen && (
+                                <div className="absolute top-full left-0 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-[130px] overflow-y-auto z-[60] fade-in">
+                                    <button 
+                                        onClick={() => { setTargetFolder('ALL'); setIsFolderMenuOpen(false); }}
+                                        className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${targetFolder === 'ALL' ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                    >
+                                        すべてのフォルダ
+                                    </button>
+                                    {folderList.map(f => (
+                                        <button 
+                                            key={f} 
+                                            onClick={() => { setTargetFolder(f); setIsFolderMenuOpen(false); }}
+                                            className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${targetFolder === f ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                        >
+                                            <i className="fas fa-folder mr-2 text-gray-300"></i>{f}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <button onClick={startReview} className="bg-[#258FAF] text-white w-72 py-4 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">テストを開始</button>
                     </div>
                 );
             }
@@ -1296,10 +1555,21 @@
                     return [];
                 }
             });
+            const [folders, setFolders] = useState(() => {
+                try {
+                    const local = localStorage.getItem('aitan_folders');
+                    return local ? JSON.parse(local) : ['main'];
+                } catch (e) {
+                    return ['main'];
+                }
+            });
             const [toastMsg, setToastMsg] = useState(null);
             const [searchResult, setSearchResult] = useState(null);
             const [searchViewKey, setSearchViewKey] = useState(0);
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+            const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
+            const [currentSavedWord, setCurrentSavedWord] = useState(null);
             const [isFromList, setIsFromList] = useState(false);
             const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
             const [user, setUser] = useState(null);
@@ -1316,6 +1586,30 @@
 
             const openAlert = (msg) => setDialog({ isOpen: true, type: 'alert', message: msg, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
             const openConfirm = (msg, onConfirm) => setDialog({ isOpen: true, type: 'confirm', message: msg, onConfirm: () => { onConfirm(); setDialog(prev => ({ ...prev, isOpen: false })); } });
+
+            // Ensure folders persist correctly
+            useEffect(() => {
+                localStorage.setItem('aitan_folders', JSON.stringify(folders));
+            }, [folders]);
+
+            // Migration effect: Ensure existing data has folder 'main' if undefined
+            useEffect(() => {
+                const needsMigration = savedWords.some(w => !w.folder);
+                if (needsMigration) {
+                    setSavedWords(prev => prev.map(w => !w.folder ? { ...w, folder: 'main' } : w));
+                    
+                    // Also update IndexedDB
+                    db.words.filter(w => !w.folder).toArray().then(wordsToUpdate => {
+                        if (wordsToUpdate.length > 0) {
+                            db.transaction('rw', db.words, async () => {
+                                for (const word of wordsToUpdate) {
+                                    await db.words.update(word.id, { folder: 'main' });
+                                }
+                            });
+                        }
+                    });
+                }
+            }, [savedWords]);
 
             useEffect(() => {
                 if (auth) {
@@ -1349,7 +1643,14 @@
                                     });
                                     const allWords = await db.words.toArray();
                                     allWords.sort((a,b) => (b.addedAt || 0) - (a.addedAt || 0));
-                                    setSavedWords(allWords);
+                                    
+                                    // Apply migration to loaded data as well
+                                    const migratedWords = allWords.map(w => !w.folder ? { ...w, folder: 'main' } : w);
+                                    setSavedWords(migratedWords);
+                                    
+                                    const uniqueFolders = new Set(['main', ...migratedWords.map(w => w.folder || 'main')]);
+                                    setFolders(Array.from(uniqueFolders));
+                                    
                                     setToastMsg('データを同期しました');
                                 }
                                 setIsCloudSynced(true);
@@ -1421,15 +1722,73 @@
                         setSavedWords(prev => prev.filter(w => w.word !== wordData.word));
                         setToastMsg('削除しました');
                     } else {
-                        const newWord = { ...wordData, addedAt: Date.now() };
+                        const newWord = { ...wordData, addedAt: Date.now(), folder: 'main' };
                         
                         await db.deleted_words.delete(newWord.word).catch(() => {});
 
                         const id = await db.words.add(newWord); 
                         setSavedWords(prev => [{ ...newWord, id }, ...prev]);
                         setToastMsg('保存しました');
+                        
+                        setCurrentSavedWord(newWord);
+                        setIsFolderModalOpen(true);
                     }
                 } catch (e) { openAlert("保存エラー発生"); }
+            };
+
+            const handleChangeFolder = async (folderName) => {
+                if (!currentSavedWord) return;
+                const updatedWord = { ...currentSavedWord, folder: folderName };
+                
+                setSavedWords(prev => prev.map(w => w.word === updatedWord.word ? updatedWord : w));
+                
+                try {
+                    const wordInDb = await db.words.where('word').equals(updatedWord.word).first();
+                    if (wordInDb) {
+                        await db.words.update(wordInDb.id, { folder: folderName });
+                    }
+                } catch (e) {}
+                
+                setToastMsg(`「${folderName}」に移動しました`);
+                setIsFolderModalOpen(false);
+            };
+
+            const handleCreateFolder = (newFolderName) => {
+                if (!folders.includes(newFolderName)) {
+                    setFolders(prev => [...prev, newFolderName]);
+                }
+                handleChangeFolder(newFolderName);
+            };
+
+            const handleRenameFolder = async (oldName, newName) => {
+                if (folders.includes(newName)) return openAlert('同じ名前のフォルダが既に存在します');
+                setFolders(prev => prev.map(f => f === oldName ? newName : f));
+                
+                const updatedWords = savedWords.map(w => w.folder === oldName ? { ...w, folder: newName } : w);
+                setSavedWords(updatedWords);
+
+                await db.transaction('rw', db.words, async () => {
+                    const wordsToUpdate = await db.words.where('folder').equals(oldName).toArray();
+                    for (const word of wordsToUpdate) {
+                        await db.words.update(word.id, { folder: newName });
+                    }
+                });
+            };
+
+            const handleDeleteFolder = async (folderName) => {
+                openConfirm(`フォルダ「${folderName}」を削除しますか？\n中身は「main」フォルダに移動します。`, async () => {
+                    setFolders(prev => prev.filter(f => f !== folderName));
+                    
+                    const updatedWords = savedWords.map(w => w.folder === folderName ? { ...w, folder: 'main' } : w);
+                    setSavedWords(updatedWords);
+
+                    await db.transaction('rw', db.words, async () => {
+                        const wordsToUpdate = await db.words.where('folder').equals(folderName).toArray();
+                        for (const word of wordsToUpdate) {
+                            await db.words.update(word.id, { folder: 'main' });
+                        }
+                    });
+                });
             };
 
             const handleDeleteWord = (word) => {
@@ -1486,6 +1845,10 @@
                         if (Array.isArray(imported)) {
                             openConfirm('データを上書きしますか？', () => {
                                 setSavedWords(imported);
+                                
+                                const uniqueFolders = new Set(['main', ...imported.map(w => w.folder || 'main')]);
+                                setFolders(Array.from(uniqueFolders));
+                                
                                 setToastMsg('復元しました');
                                 setIsSettingsOpen(false);
                             });
@@ -1512,11 +1875,13 @@
 
                     <main className={`custom-main main-with-ad ${uiDisabledClass}`}>
                         {tab === 'search' && <SearchView key={searchViewKey} savedWords={savedWords} onSaveWord={handleSaveWord} setToast={setToastMsg} externalResult={searchResult} setExternalResult={setSearchResult} isFromList={isFromList} onBack={handleBack} openAlert={openAlert} onUpdateWord={handleUpdateWord} />}
-                        {tab === 'list' && <ListView savedWords={savedWords} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} onToggleMemorized={handleToggleMemorized} />}
-                        {tab === 'review' && <ReviewView savedWords={savedWords} onFinish={resetToHome} openAlert={openAlert} />}
+                        {tab === 'list' && <ListView savedWords={savedWords} folders={folders} onDeleteWord={handleDeleteWord} onSelectWord={handleListClick} onToggleMemorized={handleToggleMemorized} onManageFolders={() => setIsFolderManagerOpen(true)} />}
+                        {tab === 'review' && <ReviewView savedWords={savedWords} folderList={folders} onFinish={resetToHome} openAlert={openAlert} />}
                     </main>
 
-                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} user={user} onLogin={handleLogin} onLogout={handleLogout} />
+                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} user={user} onLogin={handleLogin} onLogout={handleLogout} openAlert={openAlert} openConfirm={openConfirm} />
+                    <FolderSelectModal isOpen={isFolderModalOpen} onClose={() => setIsFolderModalOpen(false)} folders={folders} onSelectFolder={handleChangeFolder} onCreateFolder={handleCreateFolder} />
+                    <FolderManagerModal isOpen={isFolderManagerOpen} onClose={() => setIsFolderManagerOpen(false)} folders={folders} onRename={handleRenameFolder} onDelete={handleDeleteFolder} />
                     <DialogModal isOpen={dialog.isOpen} type={dialog.type} message={dialog.message} onConfirm={dialog.onConfirm} onCancel={() => setDialog(prev => ({ ...prev, isOpen: false }))} />
                     
                     <nav className={`custom-nav neu-flat nav-bottom ${uiDisabledClass}`}>
