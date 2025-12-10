@@ -787,7 +787,7 @@
                         <div className="mb-6 border-b border-gray-200 pb-6">
                             <div className="flex flex-col mb-3">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot text-[#258FAF]"></i> AI機能設定 (Gemini)</h3>
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-robot text-gray-500"></i> AI機能設定 (Gemini)</h3>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">APIキーを設定すると、AIによる翻訳、解説が追加されます。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※APIキーは利用者のブラウザにのみ保存され、外部送信はされません。</p>
@@ -833,7 +833,7 @@
                         <div className="mb-6 border-b border-gray-200 pb-6">
                             <div className="flex flex-col mb-3">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud text-[#258FAF]"></i> クラウド同期</h3>
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-cloud text-gray-500"></i> クラウド同期</h3>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">ログインすると、単語棚データが自動で保存/同期されるようになります。</p>
                             </div>
@@ -855,7 +855,7 @@
                         <div>
                             <div className="flex flex-col mb-3">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save text-[#258FAF]"></i> ローカルバックアップ</h3>
+                                    <h3 className="text-sm font-bold text-gray-500 flex items-center gap-2"><i className="fas fa-save text-gray-500"></i> ローカルバックアップ</h3>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1 ml-6 leading-relaxed">単語棚データをローカルに保存/復元します。</p>
                                 <p className="text-[9px] text-gray-400 mt-0.5 ml-6 leading-relaxed">※クラウド同期しない場合は、定期的に保存することをおすすめします。</p>
@@ -906,7 +906,7 @@
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
                                 <p className="text-[10px] text-gray-300 font-mono">
                                     &copy; 2025 conizm_ 
-                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.6</a>
+                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.0</a>
                                 </p>
                             </div>
                         </div>
@@ -1256,7 +1256,7 @@
                     <div className="overflow-hidden mr-2">
                         <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
                         <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
-                        {item.folder && (
+                        {item.folder && item.folder !== 'main' && (
                             <div className="text-[10px] text-gray-400 mt-1 bg-gray-100 inline-block px-2 py-0.5 rounded-md">
                                 <i className="fas fa-folder mr-1"></i>{item.folder}
                             </div>
