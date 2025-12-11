@@ -247,7 +247,9 @@
     </script>
 
     <script type="text/babel">
+
         const myGasProxy = "https://script.google.com/macros/s/AKfycbxkTyO-y_CxPQ6H4XkH95YBNjEbwL6Xqk8jvpE8gKQxD7ndo1-KToRUfZejtUaK89jp/exec";
+
         let db_firebase = null;
         let auth = null;
         let analytics = null;
@@ -430,9 +432,7 @@
                         
                         primaryTrans = term;
                         
-                        // ▼▼▼ 修正点: 日本語検索時は読み仮名を空にして表示をシンプルにする ▼▼▼
                         pronunciation = ""; 
-                        // entry.japanese[0].reading || ""; ←これは削除
 
                         entry.senses.slice(0, 3).forEach(s => meanings.push({ partOfSpeech: s.parts_of_speech.join(', ') || 'Common', definitions: [{ ja: s.english_definitions.join('; '), en: "", exEn: "", exJa: "" }] }));
                     } else {
@@ -1307,6 +1307,317 @@
                             <i className="fas fa-search text-xl"></i>
                         </button>
                     )}
+                </div>
+            );
+        };
+
+        const WordListItem = ({ item, onSelect, onDelete, onToggleMemorized }) => {
+            const clickTimeoutRef = useRef(null);
+
+            const handleClick = (e) => {
+                if (clickTimeoutRef.current) {
+                    clearTimeout(clickTimeoutRef.current);
+                    clickTimeoutRef.current = null;
+                    onToggleMemorized(item);
+                } else {
+                    clickTimeoutRef.current = setTimeout(() => {
+                        onSelect(item);
+                        clickTimeoutRef.current = null;
+                    }, 250);
+                }
+            };
+
+            const isMem = item.isMemorized || false;
+
+            return (
+                <div onClick={handleClick} className={`neu-flat p-4 flex justify-between items-center cursor-pointer active:scale-[0.99] transition ${isMem ? 'opacity-40 grayscale bg-gray-100' : ''}`}>
+                    <div className="overflow-hidden mr-2">
+                        <div className="font-bold text-[#258FAF] text-lg">{item.word}</div>
+                        <div className="text-sm text-gray-600 font-bold">{item.translation}</div>
+                        {item.folder && (
+                            <div className="text-[10px] text-gray-400 mt-1 bg-gray-100 inline-block px-2 py-0.5 rounded-md">
+                                <i className="fas fa-folder mr-1"></i>{item.folder}
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex gap-2 items-center">
+                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-[#258FAF] shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); speak(item.word, item.audioUrl); }}><i className="fas fa-volume-up"></i></button>
+                        <button className="neu-btn w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-400 shrink-0 relative z-10" onClick={(e) => { e.stopPropagation(); onDelete(item.word); }}><i className="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            );
+        };
+
+        const ListView = ({ savedWords, folders, onDeleteWord, onSelectWord, onToggleMemorized, onManageFolders }) => {
+            const [selectedFolder, setSelectedFolder] = useState('ALL');
+            const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+
+            const displayedWords = selectedFolder === 'ALL' 
+                ? savedWords 
+                : savedWords.filter(w => w.folder === selectedFolder);
+
+            if (!savedWords || savedWords.length === 0) {
+                return <div className="text-center py-20 text-gray-400 fade-in"><p>保存された単語はありません</p></div>;
+            }
+            
+            return (
+                <div className="fade-in">
+                    <div className="flex justify-between items-center mb-4 relative">
+                        <h2 className="text-xl font-bold text-[#258FAF] ml-2">単語棚 <span className="text-sm font-normal text-gray-500 ml-1">({displayedWords.length})</span></h2>
+                        <div className="flex items-center">
+                            <div className="relative">
+                                <button onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)} className="text-gray-400 hover:text-[#258FAF] p-2 flex items-center gap-1">
+                                    <span className="text-xs font-bold">{selectedFolder === 'ALL' ? 'ALL' : selectedFolder}</span>
+                                    <i className="fas fa-filter"></i>
+                                </button>
+                                {isFilterMenuOpen && (
+                                    <div className="absolute top-full right-0 mt-2 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden w-40 z-30 fade-in">
+                                        <button 
+                                            onClick={() => { setSelectedFolder('ALL'); setIsFilterMenuOpen(false); }}
+                                            className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${selectedFolder === 'ALL' ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                        >
+                                            ALL
+                                        </button>
+                                        {folders.map(folder => (
+                                            <button 
+                                                key={folder} 
+                                                onClick={() => { setSelectedFolder(folder); setIsFilterMenuOpen(false); }}
+                                                className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${selectedFolder === folder ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                            >
+                                                <i className="fas fa-folder mr-2 text-gray-300"></i>{folder}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={onManageFolders} className="text-gray-400 hover:text-[#258FAF] p-2">
+                                <i className="fas fa-cog"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {displayedWords.map((item, idx) => (
+                            <WordListItem 
+                                key={idx} 
+                                item={item} 
+                                onSelect={onSelectWord} 
+                                onDelete={onDeleteWord} 
+                                onToggleMemorized={onToggleMemorized} 
+                            />
+                        ))}
+                        {displayedWords.length === 0 && (
+                            <div className="text-center py-10 text-gray-400 text-sm">
+                                このフォルダは空です
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const ReviewView = ({ savedWords, folderList, onFinish, openAlert }) => {
+            const [isStarted, setIsStarted] = useState(false);
+            const [testMode, setTestMode] = useState('en_ja'); 
+            const [targetFolder, setTargetFolder] = useState('ALL');
+            const [queue, setQueue] = useState([]);
+            const [index, setIndex] = useState(0);
+            const [isFlipped, setIsFlipped] = useState(false);
+            const [isExiting, setIsExiting] = useState(false);
+            const [isSwipeAction, setIsSwipeAction] = useState(null); 
+            const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
+            const touchStartX = useRef(null);
+            const cardRef = useRef(null);
+
+            const startReview = () => {
+                const validWords = savedWords.filter(w => {
+                    const matchesFolder = targetFolder === 'ALL' || w.folder === targetFolder;
+                    return matchesFolder && !w.isMemorized;
+                });
+
+                if (validWords.length === 0) return openAlert('復習対象の単語がありません');
+                const shuffled = [...validWords].sort(() => Math.random() - 0.5);
+                setQueue(shuffled);
+                setIndex(0);
+                setIsFlipped(false);
+                setIsStarted(true);
+            };
+
+            const handleNext = (isClear) => {
+                if (!isClear) {
+                    setQueue(prev => {
+                        const current = prev[index];
+                        return [...prev, current];
+                    });
+                }
+                setIsExiting(true);
+                setTimeout(() => {
+                    setIsFlipped(false);
+                    setIndex(prev => prev + 1);
+                    setIsExiting(false);
+                    setIsSwipeAction(null);
+                    if (cardRef.current) cardRef.current.style.transform = ''; 
+                }, 250);
+            };
+
+            useEffect(() => {
+               if (isStarted && index >= queue.length) {
+                   setIsStarted(false);
+                   setQueue([]);
+                   setIndex(0);
+                   openAlert('復習完了！お疲れ様でした。');
+                   onFinish();
+               }
+            }, [index, queue.length, isStarted]);
+
+            useEffect(() => {
+                if (isStarted && queue[index] && testMode === 'en_ja') {
+                     const timer = setTimeout(() => {
+                         if (!isFlipped) speak(queue[index].word, queue[index].audioUrl);
+                     }, 300);
+                     return () => clearTimeout(timer);
+                }
+            }, [index, isStarted, testMode]);
+
+            const toggleFlip = () => {
+                if (!isFlipped) {
+                     const wordToSpeak = queue[index].word;
+                     speak(wordToSpeak, queue[index].audioUrl);
+                }
+                setIsFlipped(!isFlipped);
+            };
+
+            const onTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
+            const onTouchMove = (e) => {
+                if (!touchStartX.current || !cardRef.current || isExiting) return;
+                const currentX = e.touches[0].clientX;
+                const diff = currentX - touchStartX.current;
+                const rotate = diff * 0.05;
+                cardRef.current.style.transform = `translateX(${diff}px) rotate(${rotate}deg)`;
+                if (diff > 50) setIsSwipeAction('clear');
+                else if (diff < -50) setIsSwipeAction('unclear');
+                else setIsSwipeAction(null);
+            };
+            const onTouchEnd = (e) => {
+                if (!touchStartX.current || !cardRef.current) return;
+                const touchEndX = e.changedTouches[0].clientX;
+                const distance = touchStartX.current - touchEndX;
+                if (Math.abs(distance) > 100) { 
+                    if (distance > 0) handleNext(false); else handleNext(true); 
+                } else {
+                    cardRef.current.style.transform = '';
+                    setIsSwipeAction(null);
+                }
+                touchStartX.current = null;
+            };
+
+            if (!isStarted) {
+                return (
+                    <div className="h-full flex flex-col justify-center items-center text-center fade-in">
+                        <h2 className="text-2xl font-bold mb-4 text-[#258FAF]">Review Mode</h2>
+                        <div className="neu-flat w-40 h-40 rounded-full flex items-center justify-center mb-8 text-[#258FAF]">
+                            <svg width="60" height="60" viewBox="0 0 24 24" fill="currentColor">
+                                <g transform="rotate(-45 12 12)">
+                                    <path fillRule="evenodd" clipRule="evenodd" d="M9 2H13L17 6V22H5V6L9 2ZM11 7.5C12.38 7.5 13.5 6.38 13.5 5C13.5 3.62 12.38 2.5 11 2.5C9.62 2.5 8.5 3.62 8.5 5C8.5 6.38 9.62 7.5 11 7.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                                </g>
+                            </svg>
+                        </div>
+                        
+                        <div className="flex gap-4 mb-4 bg-white p-1 rounded-lg shadow-inner w-72">
+                            <button onClick={() => setTestMode('en_ja')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'en_ja' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>英 → 日</button>
+                            <button onClick={() => setTestMode('ja_en')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'ja_en' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>日 → 英</button>
+                        </div>
+
+                        <div className="relative mb-8 w-72 z-20">
+                            <button 
+                                onClick={() => setIsFolderMenuOpen(!isFolderMenuOpen)}
+                                className="w-full neu-flat text-gray-700 font-bold py-3 px-4 rounded-lg flex items-center justify-between text-xs active:scale-95 transition-transform"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <i className="fas fa-folder text-[#258FAF]"></i>
+                                    {targetFolder === 'ALL' ? 'すべてのフォルダ' : targetFolder}
+                                </span>
+                                <i className={`fas fa-chevron-down transition-transform ${isFolderMenuOpen ? 'rotate-180' : ''} text-gray-400`}></i>
+                            </button>
+                            
+                            {isFolderMenuOpen && (
+                                <div className="absolute top-full left-0 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-[130px] overflow-y-auto z-[60] fade-in">
+                                    <button 
+                                        onClick={() => { setTargetFolder('ALL'); setIsFolderMenuOpen(false); }}
+                                        className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${targetFolder === 'ALL' ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                    >
+                                        すべてのフォルダ
+                                    </button>
+                                    {folderList.map(f => (
+                                        <button 
+                                            key={f} 
+                                            onClick={() => { setTargetFolder(f); setIsFolderMenuOpen(false); }}
+                                            className={`w-full text-left px-4 py-3 text-xs font-bold border-b border-gray-50 hover:bg-gray-50 ${targetFolder === f ? 'text-[#258FAF] bg-[#258FAF]/5' : 'text-gray-600'}`}
+                                        >
+                                            <i className="fas fa-folder mr-2 text-gray-300"></i>{f}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <button onClick={startReview} className="bg-[#258FAF] text-white w-72 py-4 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">テストを開始</button>
+                    </div>
+                );
+            }
+
+            const currentCard = queue[index];
+            if (!currentCard) return null;
+            const questionText = testMode === 'en_ja' ? currentCard.word : currentCard.translation;
+            const answerMain = testMode === 'en_ja' ? currentCard.translation : currentCard.word;
+
+            return (
+                <div className="h-full flex flex-col items-center justify-center pb-4 relative fade-in overflow-hidden">
+                    <div ref={cardRef} className={`w-full max-w-sm h-[420px] card-flip cursor-pointer ${isFlipped ? 'flipped' : ''} ${isExiting ? (isSwipeAction === 'clear' ? 'slide-out-right' : 'slide-out-left') : 'slide-in-right'}`} onClick={toggleFlip} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} key={index}>
+                        <div className="card-inner">
+                            <div className="card-front neu-flat flex flex-col items-center justify-center p-8 text-center bg-[#F8FAFC] relative">
+                                <span className="absolute top-6 left-6 text-xs font-bold text-gray-400">QUESTION</span>
+                                <div className="flex-1 flex flex-col justify-center items-center w-full">
+                                    <h2 className="text-4xl font-bold text-[#258FAF] break-all">{questionText}</h2>
+                                    {testMode === 'en_ja' && (
+                                        <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full text-[#258FAF] mt-8">
+                                            <i className="fas fa-volume-up"></i>
+                                        </button>
+                                    )}
+                                </div>
+                                {isSwipeAction === 'clear' && <div className="absolute top-10 right-10 border-4 border-[#258FAF] text-[#258FAF] font-black text-2xl p-2 rounded transform rotate-12 opacity-80 pointer-events-none">CLEAR</div>}
+                                {isSwipeAction === 'unclear' && <div className="absolute top-10 left-10 border-4 border-gray-400 text-gray-400 font-black text-2xl p-2 rounded transform -rotate-12 opacity-80 pointer-events-none">UNCLEAR</div>}
+                                <div className="absolute bottom-6 w-full flex flex-col items-center gap-2">
+                                    <p className="text-xs text-gray-400 opacity-60">タップして答えを表示</p>
+                                    <div className="md:hidden text-gray-300 flex items-center mt-1 gap-2 w-full justify-center px-4">
+                                        <span className="text-lg font-bold text-gray-400 opacity-80">✕　</span>
+                                        <i className="fas fa-chevron-left opacity-50 text-xs"></i>
+                                        <div className="mx-2 flex flex-col items-center">
+                                            <i className="fas fa-hand-pointer text-2xl text-[#258FAF] opacity-80"></i>
+                                            <span className="text-[8px] text-gray-400 mt-1">swipe</span>
+                                        </div>
+                                        <i className="fas fa-chevron-right opacity-50 text-xs"></i>
+                                        <span className="text-lg font-bold text-[#258FAF] opacity-80">　◯</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="card-back neu-flat flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-[#F8FAFC] to-white">
+                                <span className="absolute top-6 left-6 text-xs font-bold text-[#258FAF]">ANSWER</span>
+                                <h3 className="text-2xl font-bold text-gray-700 mb-4">{answerMain}</h3>
+                                <div className="w-full overflow-y-auto max-h-32 text-sm text-gray-500 mb-4 px-4 space-y-2">
+                                    {currentCard.meanings && currentCard.meanings.length > 0 ? currentCard.meanings.map((m, i) => <p key={i}><span className="font-bold">{m.partOfSpeech}:</span> {m.definitions[0].ja}</p>) : <p>{currentCard.definition}</p>}
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); speak(currentCard.word, currentCard.audioUrl); }} className="neu-btn w-12 h-12 flex items-center justify-center rounded-full mt-2 text-[#258FAF]">
+                                    <i className="fas fa-volume-up"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="w-full max-w-sm mt-4 md:mt-8 flex gap-4 hidden md:flex">
+                        <button onClick={() => handleNext(false)} className="flex-1 bg-slate-200 text-slate-600 py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="fas fa-times"></i> Unclear</button>
+                        <button onClick={() => handleNext(true)} className="flex-1 bg-[#258FAF] text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><i className="far fa-circle"></i> Clear</button>
+                    </div>
                 </div>
             );
         };
