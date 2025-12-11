@@ -247,6 +247,8 @@
     </script>
 
     <script type="text/babel">
+        const myGasProxy = "https://script.google.com/macros/s/AKfycbxkTyO-y_CxPQ6H4XkH95YBNjEbwL6Xqk8jvpE8gKQxD7ndo1-KToRUfZejtUaK89jp/exec";
+
         let db_firebase = null;
         let auth = null;
         let analytics = null;
@@ -306,13 +308,16 @@
         const translateText = async (text, langPair = "en|ja") => {
             if (!text) return null;
             const [source, target] = langPair.split('|');
+            
+            const gasUrl = `${myGasProxy}?text=${encodeURIComponent(text)}&source=${source}&target=${target}`;
+            
             try {
-                const res = await fetchWithTimeout(`https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`, {}, 4000);
+                const res = await fetchWithTimeout(gasUrl, {}, 4000);
                 if (!res.ok) return null;
                 const data = await res.json();
                 return data.translation;
             } catch (e) {
-                console.warn("Translation failed or timed out", e);
+                console.warn("Translation failed", e);
                 return null; 
             }
         };
@@ -383,8 +388,8 @@
         };
 
         const fetchJishoData = async (term) => {
-            const myGasProxy = "https://script.google.com/macros/s/AKfycbxkTyO-y_CxPQ6H4XkH95YBNjEbwL6Xqk8jvpE8gKQxD7ndo1-KToRUfZejtUaK89jp/exec";
             try {
+
                 const targetUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`;
                 const finalUrl = `${myGasProxy}?url=${encodeURIComponent(targetUrl)}`;
                 const res = await fetchWithTimeout(finalUrl, {}, 4000);
@@ -963,7 +968,7 @@
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
                                 <p className="text-[10px] text-gray-300 font-mono">
                                     &copy; 2025 conizm_ 
-                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.1</a>
+                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.0</a>
                                 </p>
                             </div>
                         </div>
