@@ -383,8 +383,11 @@
         };
 
         const fetchJishoData = async (term) => {
+            const myGasProxy = "https://script.google.com/macros/s/AKfycbxkTyO-y_CxPQ6H4XkH95YBNjEbwL6Xqk8jvpE8gKQxD7ndo1-KToRUfZejtUaK89jp/exec";
             try {
-                const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`)}`, {}, 4000);
+                const targetUrl = `https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(term)}`;
+                const finalUrl = `${myGasProxy}?url=${encodeURIComponent(targetUrl)}`;
+                const res = await fetchWithTimeout(finalUrl, {}, 4000);
                 if (!res.ok) return null;
                 return await res.json();
             } catch (e) { return null; }
