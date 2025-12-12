@@ -970,7 +970,7 @@
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
                                 <p className="text-[10px] text-gray-300 font-mono">
                                     &copy; 2025 conizm_ 
-                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.1</a>
+                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.2</a>
                                 </p>
                             </div>
                         </div>
@@ -1523,12 +1523,7 @@
                             </svg>
                         </div>
                         
-                        <div className="flex gap-4 mb-4 bg-white p-1 rounded-lg shadow-inner w-72">
-                            <button onClick={() => setTestMode('en_ja')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'en_ja' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>英 → 日</button>
-                            <button onClick={() => setTestMode('ja_en')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'ja_en' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>日 → 英</button>
-                        </div>
-
-                        <div className="relative mb-8 w-72 z-20">
+                        <div className="relative mb-4 w-72 z-20">
                             <button 
                                 onClick={() => setIsFolderMenuOpen(!isFolderMenuOpen)}
                                 className="w-full neu-flat text-gray-700 font-bold py-3 px-4 rounded-lg flex items-center justify-between text-xs active:scale-95 transition-transform"
@@ -1559,6 +1554,11 @@
                                     ))}
                                 </div>
                             )}
+                        </div>
+
+                        <div className="flex gap-4 mb-4 bg-white p-1 rounded-lg shadow-inner w-72">
+                            <button onClick={() => setTestMode('en_ja')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'en_ja' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>英 → 日</button>
+                            <button onClick={() => setTestMode('ja_en')} className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all ${testMode === 'ja_en' ? 'bg-[#258FAF] text-white shadow-md' : 'text-gray-400'}`}>日 → 英</button>
                         </div>
 
                         <button onClick={startReview} className="bg-[#258FAF] text-white w-72 py-4 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">テストを開始</button>
