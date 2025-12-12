@@ -1,10 +1,10 @@
-const CACHE_NAME = 'wordrobe-v1';
+const CACHE_NAME = 'wordloop-v1';
 const urlsToCache = [
   './',
   './index.html',
-  './wordrobe.html',
   './manifest.json',
-  'https://conizm3.github.io/wordrobe/images/wordrobe-icon.png',
+  './wordloop-icon.svg',
+  // External libraries (Caching these is optional but good for performance)
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
@@ -14,34 +14,29 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // 更新を即時適用
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(urlsToCache))
   );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim()); // すぐに制御を開始
-});
-
 self.addEventListener('fetch', (event) => {
-  // ★ここが修正ポイント！ Firebase関連のURLを除外リストに追加
+  // For API calls (search), go to network first, don't cache
   if (event.request.url.includes('api.dictionaryapi.dev') || 
-      event.request.url.includes('script.google.com') ||
-      event.request.url.includes('generativelanguage.googleapis.com') ||
+      event.request.url.includes('lingva.ml') || 
       event.request.url.includes('jisho.org') ||
-      // ▼Firebase Auth用に追加
-      event.request.url.includes('googleapis.com') || 
-      event.request.url.includes('firebase') ||
-      event.request.url.includes('google.com') ) {
-    return;
+      event.request.url.includes('mymemory.translated.net')) {
+    return; 
   }
 
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        return response || fetch(event.request);
+        // Cache hit - return response
+        if (response) {
+          return response;
+        }
+        return fetch(event.request);
       })
   );
 });
