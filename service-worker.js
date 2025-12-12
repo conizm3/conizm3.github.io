@@ -1,10 +1,10 @@
-const CACHE_NAME = 'wordloop-v1';
+const CACHE_NAME = 'wordrobe-v1';
 const urlsToCache = [
   './',
   './index.html',
+  './wordrobe.html',
   './manifest.json',
-  './wordloop-icon.svg',
-  // External libraries (Caching these is optional but good for performance)
+  'https://conizm3.github.io/wordrobe/images/wordrobe-icon.png',
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
@@ -21,22 +21,17 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // For API calls (search), go to network first, don't cache
   if (event.request.url.includes('api.dictionaryapi.dev') || 
-      event.request.url.includes('lingva.ml') || 
-      event.request.url.includes('jisho.org') ||
-      event.request.url.includes('mymemory.translated.net')) {
-    return; 
+      event.request.url.includes('script.google.com') ||
+      event.request.url.includes('generativelanguage.googleapis.com') ||
+      event.request.url.includes('jisho.org')) {
+    return;
   }
 
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        // Cache hit - return response
-        if (response) {
-          return response;
-        }
-        return fetch(event.request);
+        return response || fetch(event.request);
       })
   );
 });
