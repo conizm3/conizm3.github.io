@@ -3,30 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wordrobe Data Restore V4</title>
+    <title>Wordrobe Rescue V5</title>
     <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <style>
-        body { font-family: sans-serif; padding: 20px; background: #FFF0F0; color: #333; text-align: center; }
-        h1 { color: #DC2626; font-size: 1.5rem; }
+        body { font-family: sans-serif; padding: 20px; background: #ffebeb; color: #333; text-align: center; }
+        h1 { color: #d32f2f; font-size: 1.5rem; }
         .box { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 0 auto; max-width: 400px; }
-        button { background: #DC2626; color: white; border: none; padding: 15px; font-size: 1rem; font-weight: bold; border-radius: 10px; width: 100%; margin-top: 15px; cursor: pointer; }
-        #logs { margin-top: 20px; background: #1e293b; color: #4ade80; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; text-align: left; min-height: 120px; white-space: pre-wrap; }
+        button { background: #d32f2f; color: white; border: none; padding: 15px; font-size: 1rem; font-weight: bold; border-radius: 10px; width: 100%; margin-top: 15px; cursor: pointer; }
+        #logs { margin-top: 20px; background: #1e293b; color: #4ade80; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.7rem; text-align: left; min-height: 150px; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
     <div class="box">
-        <h1>🚀 強制復元 V4</h1>
-        <p>LocalStorageとIndexedDBの<br>両方にデータを書き込みます。</p>
+        <h1>🚑 最終兵器 V5</h1>
+        <p>通信ブロックを破壊して<br>データを復旧します。</p>
         
         <div id="status">未ログイン</div>
         
         <button id="actionBtn" onclick="startLogin()">Googleログイン (Popup)</button>
         
-        <div id="logs">待機中...</div>
+        <div id="logs">起動中...</div>
     </div>
 
     <script>
@@ -36,6 +36,24 @@
             logEl.scrollTop = logEl.scrollHeight;
             console.log(msg);
         }
+
+        // ▼▼▼ ここが新機能：起動時にService Workerを抹殺してリロードする ▼▼▼
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(async function(registrations) {
+                if (registrations.length > 0) {
+                    log("⚠️ 邪魔なService Workerを発見");
+                    for(let registration of registrations) {
+                        await registration.unregister();
+                        log("🔥 削除しました: " + registration.scope);
+                    }
+                    log("♻️ ページをリロードして適用します...");
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    log("✅ 通信経路はクリーンです");
+                }
+            });
+        }
+        // ▲▲▲▲▲▲
 
         const firebaseConfig = {
             apiKey: "AIzaSyCqoqNq7N-x5Wr6TsJkyCU0J6o-Mj1Ir8g",
@@ -47,9 +65,16 @@
             measurementId: "G-YD40SF3F32"
         };
         
-        firebase.initializeApp(firebaseConfig);
+        try {
+            firebase.initializeApp(firebaseConfig);
+            log("Firebase準備OK");
+        } catch(e) { log("Firebase Init Error"); }
+
         const db_firebase = firebase.firestore();
         const auth = firebase.auth();
+        // ※オフライン制限を回避するため、設定を追加
+        db_firebase.settings({ experimentalForceLongPolling: true }); 
+
         const db = new Dexie('WordloopDB');
         db.version(3).stores({ words: '++id, word, nextReview, interval, repetition, efactor, addedAt, folder', deleted_words: 'word' });
 
@@ -78,11 +103,24 @@
 
         async function restoreData() {
             if (!currentUser) return log("ユーザーがいません");
-            log("クラウドからデータ取得中...");
+            log("クラウド通信開始...");
             btn.disabled = true;
 
+            // 念のためネットワーク接続を再確認
+            if (!navigator.onLine) {
+                log("⚠️ スマホがオフラインのようです");
+                alert("インターネットに接続してください");
+                btn.disabled = false;
+                return;
+            }
+
             try {
-                const doc = await db_firebase.collection('users').doc(currentUser.uid).get();
+                // タイムアウト付きで取得を試みる
+                const docPromise = db_firebase.collection('users').doc(currentUser.uid).get();
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("タイムアウト: 通信がブロックされています")), 10000));
+
+                const doc = await Promise.race([docPromise, timeoutPromise]);
+                
                 if (!doc.exists) {
                     log("⚠️ クラウドにデータ無し");
                     alert("クラウドにデータがありません。");
@@ -91,26 +129,26 @@
                 }
 
                 const cloudWords = doc.data().words || [];
-                log(`📦 ${cloudWords.length}件を受信`);
+                log(`📦 ${cloudWords.length}件を受信成功！`);
 
-                // 1. IndexedDB (奥底のDB) に書き込み
+                // 1. IndexedDB 書き込み
                 await db.words.clear();
                 await db.words.bulkAdd(cloudWords);
                 log("✅ DB書き込み完了");
 
-                // 2. LocalStorage (手前の引き出し) に書き込み【重要】
+                // 2. LocalStorage 書き込み
                 localStorage.setItem('aitan_words', JSON.stringify(cloudWords));
-                
-                // フォルダ情報も復元
                 const uniqueFolders = new Set(['main', ...cloudWords.map(w => w.folder || 'main')]);
                 localStorage.setItem('aitan_folders', JSON.stringify(Array.from(uniqueFolders)));
-                
                 log("✅ LocalStorage書き込み完了");
 
-                alert("成功しました！\nこのページを閉じて、Safariで wordrobe.html を開いてください。\n（リロードするとデータが出ます）");
+                alert("大成功です！\nこのページを閉じて、wordrobe.html を開いてください。\n（必ずリロードしてください）");
                 
             } catch (e) {
                 log("エラー: " + e.message);
+                if (e.message.includes("offline")) {
+                    log("ヒント: Wi-Fiを切って4G/5Gで試してみてください");
+                }
                 btn.disabled = false;
             }
         }
