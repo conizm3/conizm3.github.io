@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Wordrobe Fixer</title>
+    <title>Wordrobe Fixer V6</title>
     
     <!-- PWA設定 -->
     <meta name="mobile-web-app-capable" content="yes">
@@ -33,10 +33,10 @@
         <div class="absolute top-0 left-0 w-full h-1 bg-[#258FAF] rounded-t-2xl"></div>
         
         <h1 class="text-xl font-bold text-[#258FAF] mb-2 flex items-center justify-center gap-2">
-            <i class="fas fa-tools"></i> 修復＆起動ツール V5
+            <i class="fas fa-tools"></i> 修復＆起動ツール V6
         </h1>
         <p class="text-xs text-gray-400 mb-6">
-            通信エラーを直し、データを復元して<br>アプリを起動します。
+            非常用ルート(REST API)を使用して<br>データを強制取得します。
         </p>
 
         <!-- ステータス表示 -->
@@ -67,36 +67,23 @@
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // 重要：ホーム画面から開いている場合は警告を出す
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-        if (isStandalone) {
-            alert("⚠️ 重要 ⚠️\nこの修復ツールは「ホーム画面のアイコン」からは正しく動きません。\n\nSafariブラウザを開いて、そこからアクセスしてください。");
-        }
-
-        // 起動時にゾンビSWを即死させ、リロードする
+        // SW強制削除 (エラーハンドリング追加版)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.getRegistrations()
                     .then(function(registrations) {
-                        if (registrations.length > 0) {
-                            log("⚠️ 邪魔なService Workerを発見");
-                            let count = 0;
+                        if (registrations && registrations.length > 0) {
+                            log("⚠️ 古い設定を削除中...");
                             for(let registration of registrations) {
-                                registration.unregister().then(() => {
-                                    log("🔥 削除しました: " + registration.scope);
-                                    count++;
-                                    if(count === registrations.length) {
-                                        log("♻️ クリーンにするためリロードします...");
-                                        setTimeout(() => window.location.reload(), 1000);
-                                    }
-                                });
+                                registration.unregister();
                             }
-                        } else {
-                            log("✅ 通信環境はクリーンです");
+                            log("✅ 通信環境をリセットしました");
                         }
                     })
-                    .catch(function(error) {
-                        console.warn("SW Check skipped", error);
+                    .catch(function(err) {
+                        // エラーが出ても無視して進める
+                        console.warn("SW cleanup skipped:", err);
+                        log("ℹ️ SWチェックをスキップしました");
                     });
             });
         }
@@ -113,20 +100,9 @@
         
         try {
             firebase.initializeApp(firebaseConfig);
-        } catch(e) {
-            console.error(e);
-        }
+        } catch(e) { console.error(e); }
         
         const db_firebase = firebase.firestore();
-        
-        // 【重要】オフラインエラー対策：強制的にロングポーリングを使用する
-        try {
-            db_firebase.settings({ experimentalForceLongPolling: true, merge: true });
-            log("✅ 通信モード: 強制ロングポーリング");
-        } catch(e) {
-            log("⚠️ 設定警告: " + e.message);
-        }
-
         const auth = firebase.auth();
         const db = new Dexie('WordloopDB');
         db.version(3).stores({ words: '++id, word, nextReview, interval, repetition, efactor, addedAt, folder', deleted_words: 'word' });
@@ -136,90 +112,121 @@
         const statusEl = document.getElementById('status');
         let currentUser = null;
 
-        // ログイン処理
         function startLogin() {
             log("ログイン画面を開きます...");
-            
             const provider = new firebase.auth.GoogleAuthProvider();
-            
             auth.signInWithPopup(provider)
                 .then((result) => {
                     log("🎉 ログイン成功");
                     currentUser = result.user;
                     statusEl.innerText = currentUser.email;
                     statusEl.style.color = "#258FAF";
-                    
                     loginBtn.disabled = true;
-                    loginBtn.innerText = "データ復元中...";
-                    
-                    // 少し待ってから復元開始（通信安定のため）
-                    setTimeout(restoreData, 500);
+                    loginBtn.innerText = "データ取得中...";
+                    restoreData();
                 })
                 .catch((error) => {
                     log("❌ エラー: " + error.message);
-                    if (error.code === 'auth/popup-blocked' || error.message.includes('popup')) {
-                        alert("⚠️ ポップアップがブロックされました。\n\niPhoneの「設定 > Safari > ポップアップブロック」をOFFにして、このページをリロードしてください。");
-                    } else {
-                        alert("ログインエラー: " + error.message);
-                    }
+                    alert("ログインできませんでした。ポップアップを許可してください。");
                 });
         }
 
-        // データ復元処理
-        async function restoreData() {
-            log("クラウドからデータを探します...");
-            
-            // 念のためネットワークチェック
-            if (!navigator.onLine) {
-                log("⚠️ ネットワーク未接続の可能性があります");
+        // ▼▼▼ Firestore REST API パーサー ▼▼▼
+        function parseFirestoreValue(val) {
+            if (val.stringValue !== undefined) return val.stringValue;
+            if (val.integerValue !== undefined) return parseInt(val.integerValue);
+            if (val.doubleValue !== undefined) return parseFloat(val.doubleValue);
+            if (val.booleanValue !== undefined) return val.booleanValue;
+            if (val.mapValue !== undefined) {
+                const obj = {};
+                for (const k in val.mapValue.fields) {
+                    obj[k] = parseFirestoreValue(val.mapValue.fields[k]);
+                }
+                return obj;
             }
+            if (val.arrayValue !== undefined) {
+                return (val.arrayValue.values || []).map(parseFirestoreValue);
+            }
+            return null;
+        }
+        // ▲▲▲▲▲▲
+
+        async function restoreData() {
+            log("データ取得開始...");
+            let cloudWords = [];
 
             try {
-                // 10秒のタイムアウトを設定
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("タイムアウト: 通信がブロックされています。Wi-Fiを切って4G/5Gで試してください。")), 10000)
-                );
-                
+                // 1. まず通常SDKで試す
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3000));
                 const docPromise = db_firebase.collection('users').doc(currentUser.uid).get();
-
                 const doc = await Promise.race([docPromise, timeoutPromise]);
                 
-                if (!doc.exists) {
-                    log("⚠️ データが見つかりません");
-                    alert("クラウドにデータがありません。\nPCから送信されていますか？");
+                if (doc.exists) {
+                    cloudWords = doc.data().words || [];
+                    log("✅ SDK経由で取得成功");
+                } else {
+                    log("⚠️ データが見つかりません (SDK)");
+                }
+            } catch (e) {
+                // 2. 失敗したら REST API で試す（ここが新機能）
+                log("⚠️ SDKタイムアウト。非常用ルート(REST)で試みます...");
+                try {
+                    const token = await currentUser.getIdToken();
+                    const url = `https://firestore.googleapis.com/v1/projects/conizm-01/databases/(default)/documents/users/${currentUser.uid}`;
+                    
+                    const res = await fetch(url, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    if (!res.ok) throw new Error("REST API Error: " + res.status);
+                    
+                    const json = await res.json();
+                    if (json.fields && json.fields.words) {
+                        cloudWords = parseFirestoreValue(json.fields.words);
+                        log("✅ 非常用ルートで取得成功！");
+                    } else {
+                        log("⚠️ REST: データ構造が見つかりません");
+                    }
+                } catch (restError) {
+                    log("❌ 非常用ルートも失敗: " + restError.message);
                     loginBtn.disabled = false;
                     loginBtn.innerText = "再試行";
+                    alert("データ取得に失敗しました。通信環境を確認してください。");
                     return;
                 }
+            }
 
-                const cloudWords = doc.data().words || [];
-                log(`📦 ${cloudWords.length}語を発見。ダウンロード中...`);
+            if (cloudWords.length === 0) {
+                log("⚠️ データが0件です");
+                alert("クラウドにデータがありませんでした。");
+                loginBtn.disabled = false;
+                loginBtn.innerText = "再試行";
+                return;
+            }
 
-                // 1. IndexedDB 書き込み
+            log(`📦 ${cloudWords.length}語を保存します...`);
+
+            try {
+                // DB書き込み
                 await db.words.clear();
                 await db.words.bulkAdd(cloudWords);
-                log("✅ データベース復元完了");
-
-                // 2. LocalStorage 書き込み
+                
+                // キャッシュ書き込み
                 localStorage.setItem('aitan_words', JSON.stringify(cloudWords));
                 const uniqueFolders = new Set(['main', ...cloudWords.map(w => w.folder || 'main')]);
                 localStorage.setItem('aitan_folders', JSON.stringify(Array.from(uniqueFolders)));
-                log("✅ キャッシュ復元完了");
-
-                // 完了状態へ
+                
+                log("✅ 全ての復元完了");
+                
                 loginBtn.style.display = 'none';
                 goAppBtn.style.display = 'flex';
-                log("🚀 準備完了！アプリを起動してください");
-                alert("大成功です！\n下の「アプリを起動する」ボタンを押してください。");
-                
-            } catch (e) {
-                log("❌ エラー: " + e.message);
-                loginBtn.disabled = false;
-                loginBtn.innerText = "再試行";
+                alert("復元成功！\n「アプリを起動する」ボタンを押してください。");
+
+            } catch (writeError) {
+                log("❌ 書き込みエラー: " + writeError.message);
             }
         }
 
-        // アプリへ移動
         function goToApp() {
             window.location.href = "./wordrobe.html";
         }
