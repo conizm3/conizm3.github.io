@@ -3,47 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wordrobe Data Restore V2</title>
+    <title>Wordrobe Data Restore V3 (Popup)</title>
     <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <style>
-        body { font-family: sans-serif; padding: 20px; background: #F8FAFC; color: #333; }
-        h1 { color: #258FAF; font-size: 1.5rem; text-align: center; }
-        .box { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 0 auto; max-width: 400px; text-align: center; }
-        button { background: #258FAF; color: white; border: none; padding: 15px; font-size: 1rem; font-weight: bold; border-radius: 10px; width: 100%; margin-top: 10px; cursor: pointer; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        #logs { margin-top: 20px; background: #1e293b; color: #4ade80; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; text-align: left; min-height: 100px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
-        .error-log { color: #ef4444; }
+        body { font-family: sans-serif; padding: 20px; background: #FFF0F0; color: #333; text-align: center; }
+        h1 { color: #DC2626; font-size: 1.5rem; }
+        .box { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 0 auto; max-width: 400px; }
+        button { background: #DC2626; color: white; border: none; padding: 15px; font-size: 1rem; font-weight: bold; border-radius: 10px; width: 100%; margin-top: 15px; cursor: pointer; }
+        #logs { margin-top: 20px; background: #1e293b; color: #4ade80; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; text-align: left; min-height: 120px; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
     <div class="box">
-        <h1>🛠️ データ強制復旧 V2</h1>
-        <p style="font-size:0.9rem; color:#666;">クラウドのデータを取得します。</p>
+        <h1>🔥 最終手段 V3</h1>
+        <p>画面移動せずにログインして<br>データをねじ込みます。</p>
         
-        <div id="user-display" style="font-weight:bold; margin:10px 0; min-height:20px;">未ログイン</div>
+        <div id="status">未ログイン</div>
         
-        <button id="actionBtn" onclick="handleAction()">初期化中...</button>
+        <button id="actionBtn" onclick="startLogin()">Googleログイン (Popup)</button>
         
-        <div id="logs">ログ待機中...</div>
+        <div id="logs">待機中...</div>
     </div>
 
     <script>
-        // ログ表示用関数
         const logEl = document.getElementById('logs');
-        function log(msg, isError = false) {
-            const line = document.createElement('div');
-            line.textContent = `> ${msg}`;
-            if(isError) line.className = 'error-log';
-            logEl.appendChild(line);
+        function log(msg) {
+            logEl.innerHTML += `\n> ${msg}`;
             logEl.scrollTop = logEl.scrollHeight;
             console.log(msg);
         }
 
-        // 1. Firebase設定
         const firebaseConfig = {
             apiKey: "AIzaSyCqoqNq7N-x5Wr6TsJkyCU0J6o-Mj1Ir8g",
             authDomain: "conizm-01.firebaseapp.com",
@@ -54,111 +47,74 @@
             measurementId: "G-YD40SF3F32"
         };
         
-        try {
-            firebase.initializeApp(firebaseConfig);
-            log("Firebase Initialized");
-        } catch(e) { log("Init Error: " + e.message, true); }
-
+        firebase.initializeApp(firebaseConfig);
         const db_firebase = firebase.firestore();
         const auth = firebase.auth();
         const db = new Dexie('WordloopDB');
         db.version(3).stores({ words: '++id, word, nextReview, interval, repetition, efactor, addedAt, folder', deleted_words: 'word' });
 
         const btn = document.getElementById('actionBtn');
-        const userDisplay = document.getElementById('user-display');
+        const statusEl = document.getElementById('status');
         let currentUser = null;
 
-        // ボタンの状態管理
-        function setButtonState(state) {
-            if (state === 'login') {
-                btn.innerText = "Googleでログイン";
-                btn.onclick = login;
-                btn.disabled = false;
-            } else if (state === 'restore') {
-                btn.innerText = "データを復元実行";
-                btn.onclick = restoreData;
-                btn.disabled = false;
-            } else if (state === 'loading') {
-                btn.disabled = true;
-                btn.innerText = "処理中...";
-            }
-        }
-
-        // ログイン処理（明示的にPersistenceを設定）
-        function login() {
-            setButtonState('loading');
-            log("ログイン処理開始...");
+        // 1. ポップアップでログイン
+        function startLogin() {
+            log("ポップアップを開きます...");
+            const provider = new firebase.auth.GoogleAuthProvider();
             
-            // ローカル（ブラウザ）にログイン状態を保存する設定
-            auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+            // 重要: セッション永続性を「SESSION（このタブのみ）」に設定して確実に通す
+            auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
                 .then(() => {
-                    const provider = new firebase.auth.GoogleAuthProvider();
-                    return auth.signInWithRedirect(provider);
+                    return auth.signInWithPopup(provider);
+                })
+                .then((result) => {
+                    log("🎉 ログイン成功！: " + result.user.email);
+                    currentUser = result.user;
+                    statusEl.innerText = "ログイン中: " + currentUser.email;
+                    
+                    // そのまま復元へ
+                    btn.innerText = "データを書き込む";
+                    btn.onclick = restoreData;
+                    btn.style.backgroundColor = "#258FAF";
                 })
                 .catch((error) => {
-                    log("Login Error: " + error.message, true);
-                    setButtonState('login');
+                    log("❌ ログイン失敗: " + error.message);
+                    if(error.code === 'auth/popup-blocked') {
+                        alert("ポップアップがブロックされました。「許可」してください。");
+                    }
                 });
         }
 
-        // 復元処理
+        // 2. データ復元
         async function restoreData() {
-            if (!currentUser) return log("ユーザーがいません", true);
-            setButtonState('loading');
-            log("クラウドからデータ取得開始...");
+            if (!currentUser) return log("ユーザーがいません");
+            log("クラウドからデータ取得中...");
+            btn.disabled = true;
 
             try {
                 const doc = await db_firebase.collection('users').doc(currentUser.uid).get();
                 
                 if (!doc.exists) {
-                    log("❌ クラウドにデータがありません！", true);
-                    alert("クラウドにデータが見つかりませんでした。\nPCでデータ送信が完了しているか確認してください。");
-                    setButtonState('restore');
+                    log("⚠️ クラウドにデータ無し");
+                    alert("クラウドにデータがありません。PC側で保存できていない可能性があります。");
+                    btn.disabled = false;
                     return;
                 }
 
                 const cloudWords = doc.data().words || [];
-                log(`📦 ${cloudWords.length}件のデータを取得`);
+                log(`📦 ${cloudWords.length}件を受信`);
 
                 await db.words.clear();
                 await db.words.bulkAdd(cloudWords);
                 
-                log("✅ DB書き込み完了");
-                alert("復元成功！\nこれで直りました。wordrobe.htmlに戻ってください。");
+                log("✅ 書き込み完了！");
+                alert("完全復活しました！\nこのページを閉じて wordrobe.html を開いてください。");
                 
             } catch (e) {
-                log("Restore Error: " + e.message, true);
-                setButtonState('restore');
+                log("エラー: " + e.message);
+                btn.disabled = false;
             }
         }
-
-        // 起動時のチェック（リダイレクト結果の取得を優先）
-        log("認証状態を確認中...");
-        
-        auth.getRedirectResult().then((result) => {
-            if (result.user) {
-                log("Redirect成功: " + result.user.email);
-            }
-        }).catch((error) => {
-            log("Redirect Error: " + error.message, true);
-        });
-
-        auth.onAuthStateChanged((user) => {
-            if (user) {
-                currentUser = user;
-                userDisplay.innerText = "ログイン中: " + user.email;
-                userDisplay.style.color = "#258FAF";
-                log("User Found: " + user.uid);
-                setButtonState('restore');
-            } else {
-                currentUser = null;
-                userDisplay.innerText = "未ログイン";
-                userDisplay.style.color = "#666";
-                log("User Not Found (Guest)");
-                setButtonState('login');
-            }
-        });
-
     </script>
 </body>
 </html>
