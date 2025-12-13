@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wordrobe Data Restore V3 (Popup)</title>
+    <title>Wordrobe Data Restore V4</title>
     <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -19,8 +19,8 @@
 <body>
 
     <div class="box">
-        <h1>🔥 最終手段 V3</h1>
-        <p>画面移動せずにログインして<br>データをねじ込みます。</p>
+        <h1>🚀 強制復元 V4</h1>
+        <p>LocalStorageとIndexedDBの<br>両方にデータを書き込みます。</p>
         
         <div id="status">未ログイン</div>
         
@@ -57,35 +57,25 @@
         const statusEl = document.getElementById('status');
         let currentUser = null;
 
-        // 1. ポップアップでログイン
         function startLogin() {
             log("ポップアップを開きます...");
             const provider = new firebase.auth.GoogleAuthProvider();
-            
-            // 重要: セッション永続性を「SESSION（このタブのみ）」に設定して確実に通す
             auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
-                .then(() => {
-                    return auth.signInWithPopup(provider);
-                })
+                .then(() => { return auth.signInWithPopup(provider); })
                 .then((result) => {
-                    log("🎉 ログイン成功！: " + result.user.email);
+                    log("🎉 ログイン成功: " + result.user.email);
                     currentUser = result.user;
-                    statusEl.innerText = "ログイン中: " + currentUser.email;
-                    
-                    // そのまま復元へ
+                    statusEl.innerText = "ログイン中";
                     btn.innerText = "データを書き込む";
                     btn.onclick = restoreData;
                     btn.style.backgroundColor = "#258FAF";
                 })
                 .catch((error) => {
                     log("❌ ログイン失敗: " + error.message);
-                    if(error.code === 'auth/popup-blocked') {
-                        alert("ポップアップがブロックされました。「許可」してください。");
-                    }
+                    alert("ログインできませんでした。ポップアップを許可してください。");
                 });
         }
 
-        // 2. データ復元
         async function restoreData() {
             if (!currentUser) return log("ユーザーがいません");
             log("クラウドからデータ取得中...");
@@ -93,10 +83,9 @@
 
             try {
                 const doc = await db_firebase.collection('users').doc(currentUser.uid).get();
-                
                 if (!doc.exists) {
                     log("⚠️ クラウドにデータ無し");
-                    alert("クラウドにデータがありません。PC側で保存できていない可能性があります。");
+                    alert("クラウドにデータがありません。");
                     btn.disabled = false;
                     return;
                 }
@@ -104,11 +93,21 @@
                 const cloudWords = doc.data().words || [];
                 log(`📦 ${cloudWords.length}件を受信`);
 
+                // 1. IndexedDB (奥底のDB) に書き込み
                 await db.words.clear();
                 await db.words.bulkAdd(cloudWords);
+                log("✅ DB書き込み完了");
+
+                // 2. LocalStorage (手前の引き出し) に書き込み【重要】
+                localStorage.setItem('aitan_words', JSON.stringify(cloudWords));
                 
-                log("✅ 書き込み完了！");
-                alert("完全復活しました！\nこのページを閉じて wordrobe.html を開いてください。");
+                // フォルダ情報も復元
+                const uniqueFolders = new Set(['main', ...cloudWords.map(w => w.folder || 'main')]);
+                localStorage.setItem('aitan_folders', JSON.stringify(Array.from(uniqueFolders)));
+                
+                log("✅ LocalStorage書き込み完了");
+
+                alert("成功しました！\nこのページを閉じて、Safariで wordrobe.html を開いてください。\n（リロードするとデータが出ます）");
                 
             } catch (e) {
                 log("エラー: " + e.message);
