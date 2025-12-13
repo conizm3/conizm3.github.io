@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wordrobe Data Restore</title>
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; text-align: center; background: #F8FAFC; color: #333; display: flex; flex-direction: column; justify-content: center; height: 100vh; }
+        h1 { color: #258FAF; margin-bottom: 20px; }
+        button { background: #258FAF; color: white; border: none; padding: 15px 30px; font-size: 1.1rem; font-weight: bold; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-top: 20px; width: 100%; max-width: 300px; }
+        button:disabled { opacity: 0.5; }
+        #status { margin-top: 20px; font-weight: bold; min-height: 1.5em; color: #555; }
+        .box { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); margin: 0 auto; max-width: 400px; }
+    </style>
+</head>
+<body>
+
+    <div class="box">
+        <h1>☁️ データ復旧ツール</h1>
+        <p>クラウドにあるデータを強制的に<br>この端末にダウンロードします。</p>
+        
+        <div id="status">準備中...</div>
+        
+        <button id="loginBtn" onclick="loginAndRestore()" style="display:none;">ログインして復元</button>
+    </div>
+
+    <script>
+        // 1. Firebase設定
+        const firebaseConfig = {
+            apiKey: "AIzaSyCqoqNq7N-x5Wr6TsJkyCU0J6o-Mj1Ir8g",
+            authDomain: "conizm-01.firebaseapp.com",
+            projectId: "conizm-01",
+            storageBucket: "conizm-01.firebasestorage.app",
+            messagingSenderId: "180210157068",
+            appId: "1:180210157068:web:e03a373dd3f818cdee1029",
+            measurementId: "G-YD40SF3F32"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db_firebase = firebase.firestore();
+        const auth = firebase.auth();
+
+        // 2. Dexie (Local DB) 設定
+        const db = new Dexie('WordloopDB');
+        db.version(3).stores({
+            words: '++id, word, nextReview, interval, repetition, efactor, addedAt, folder',
+            deleted_words: 'word'
+        });
+
+        const statusEl = document.getElementById('status');
+        const btn = document.getElementById('loginBtn');
+
+        // 起動時のチェック
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                statusEl.innerText = "ログイン済み: " + user.email;
+                btn.innerText = "データを復元する";
+                btn.onclick = () => restoreData(user);
+                btn.style.display = 'inline-block';
+            } else {
+                statusEl.innerText = "ログインしてください";
+                btn.innerText = "Googleでログインして復元";
+                btn.onclick = login;
+                btn.style.display = 'inline-block';
+            }
+        });
+
+        function login() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithRedirect(provider);
+        }
+
+        auth.getRedirectResult().catch(e => {
+            statusEl.innerText = "エラー: " + e.message;
+        });
+
+        async function restoreData(user) {
+            btn.disabled = true;
+            statusEl.innerText = "クラウドからデータ取得中...";
+            
+            try {
+                // クラウドから取得
+                const doc = await db_firebase.collection('users').doc(user.uid).get();
+                if (!doc.exists) {
+                    throw new Error("クラウドにデータがありませんでした。");
+                }
+
+                const cloudWords = doc.data().words || [];
+                statusEl.innerText = `${cloudWords.length}件のデータが見つかりました。\n書き込み中...`;
+
+                // ローカルDBを一度空にして書き込み
+                await db.words.clear();
+                await db.words.bulkAdd(cloudWords);
+
+                statusEl.innerHTML = `<span style="color:#258FAF">✅ 復元成功！</span><br>アプリに戻ってください。`;
+                alert("復元が完了しました！\nwordrobe.htmlに戻ってリロードしてください。");
+
+            } catch (e) {
+                console.error(e);
+                statusEl.innerText = "失敗: " + e.message;
+                statusEl.style.color = "red";
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
