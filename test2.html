@@ -1743,7 +1743,7 @@
             useEffect(() => {
                 if (auth) {
                     try {
-                         // プレビュー環境でのエラーを防ぐための try-catch
+                        
                         auth.getRedirectResult().then((result) => {
                             if (result && result.user) {
                                 setToastMsg('ログインしました');
@@ -1755,7 +1755,7 @@
                             }
                         });
                     } catch(e) {
-                         // 環境非対応のエラーは無視
+                  
                     }
 
                     auth.onAuthStateChanged(async (u) => {
@@ -2042,11 +2042,11 @@
                             setToastMsg("トークン取得失敗...");
                         }
                     } else {
-                        setToastMsg("通知が拒否されました");
+                        setToastMsg("通知を設定できませんでした");
                     }
                 } catch (error) {
                     console.error("通知設定エラー:", error);
-                    setToastMsg("エラー: 通信環境を確認してください");
+                    setToastMsg("エラー: 通知機能は利用できない環境です");
                 }
             };
 
