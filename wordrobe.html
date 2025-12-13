@@ -1766,7 +1766,15 @@
             const handleLogin = () => {
                 if (!auth) return openAlert("クラウド機能は現在利用できません");
                 const provider = new firebase.auth.GoogleAuthProvider();
-                auth.signInWithPopup(provider).catch(e => openAlert(`ログインエラー: ${e.message}`));
+                
+                auth.signInWithPopup(provider)
+                    .then(() => {
+                        setToastMsg('ログインしました');
+                    })
+                    .catch(e => {
+                        console.error(e);
+                        openAlert(`ログインエラー: ${e.message}`);
+                    });
             };
 
             const handleLogout = () => {
