@@ -767,7 +767,7 @@
             );
         };
 
-        const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout, openAlert, openConfirm }) => {
+       const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout, openAlert, openConfirm }) => {
             const [apiKey, setApiKey] = useState('');
             const [isSaved, setIsSaved] = useState(false);
             const [testStatus, setTestStatus] = useState(null);
@@ -829,6 +829,57 @@
                 } catch (e) {
                     setTestStatus('error');
                     openAlert(`ネットワークエラー\n${e.message}`);
+                }
+            };
+
+            const handleForceDownload = async () => {
+                if (!user) return openAlert("ログインしてください");
+                if (!confirm("クラウド上のデータで、今のデータを上書きしてもよろしいですか？")) return;
+
+                try {
+                    const btn = document.getElementById('sync-btn');
+                    if (btn) btn.classList.add('fa-spin');
+
+                    const doc = await db_firebase.collection('users').doc(user.uid).get();
+                    
+                    if (doc.exists) {
+                        const cloudWords = doc.data().words || [];
+                        
+                        if (cloudWords.length === 0) {
+                            if(btn) btn.classList.remove('fa-spin');
+                            return openAlert("クラウドにデータがありませんでした");
+                        }
+
+                        await db.words.clear();
+                        await db.words.bulkAdd(cloudWords);
+                        
+                        if(btn) btn.classList.remove('fa-spin');
+                        alert(`復元成功！\n${cloudWords.length}語をダウンロードしました。\n画面を更新します。`);
+                        window.location.reload();
+                    } else {
+                        if(btn) btn.classList.remove('fa-spin');
+                        openAlert("クラウドにデータが見つかりませんでした");
+                    }
+                } catch (e) {
+                    console.error(e);
+                    const btn = document.getElementById('sync-btn');
+                    if(btn) btn.classList.remove('fa-spin');
+                    openAlert(`エラーが発生しました:\n${e.message}`);
+                }
+            };
+
+            const handleManualSync = async () => {
+                if (!user || !db_firebase) return;
+                try {
+                    const words = await db.words.toArray();
+                    await db_firebase.collection('users').doc(user.uid).set({
+                        words: words, 
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                    openAlert('同期成功！\nPCのデータをクラウドに保存しました。');
+                } catch (e) {
+                    console.error(e);
+                    openAlert(`保存エラー: ${e.message}`);
                 }
             };
 
@@ -905,10 +956,35 @@
                             </div>
                             <div>
                                 {user ? (
-                                    <div className="neu-pressed bg-[#258FAF]/5 p-4 rounded-xl border border-[#258FAF]/20 relative overflow-hidden text-center">
-                                        <p className="text-sm text-[#258FAF] font-bold mb-2">ログイン中</p>
-                                        <p className="text-xs text-gray-500 mb-3">{user.email || user.uid}</p>
-                                        <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
+                                    <div className="neu-pressed bg-[#258FAF]/5 p-5 rounded-xl border border-[#258FAF]/20 text-center relative">
+                                        
+                                        {/* ユーザー情報 */}
+                                        <div className="mb-4">
+                                            <p className="text-xs text-[#258FAF] font-bold">Logged in</p>
+                                            <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-tight">{user.email || user.uid}</p>
+                                        </div>
+
+                                        {/* ボタンエリア：ログアウトとグルグルを横並び */}
+                                        <div className="flex items-center justify-center gap-3">
+                                            
+                                            {/* 1. ログアウトボタン */}
+                                            <button 
+                                                onClick={onLogout} 
+                                                className="text-[10px] text-red-400 hover:text-red-500 bg-white border border-red-100 px-5 py-2.5 rounded-lg font-bold shadow-sm transition-colors active:scale-95"
+                                            >
+                                                ログアウト
+                                            </button>
+
+                                            {/* 2. グルグルボタン（クラウドから復元） */}
+                                            <button 
+                                                onClick={handleForceDownload} 
+                                                className="w-9 h-9 rounded-full bg-white text-[#258FAF] border border-[#258FAF]/20 shadow-sm flex items-center justify-center hover:bg-[#258FAF] hover:text-white transition-all active:scale-95 group"
+                                                title="データを復元（受信）"
+                                            >
+                                                <i id="sync-btn" className="fas fa-sync-alt group-active:rotate-180 transition-transform duration-500"></i>
+                                            </button>
+                                            
+                                        </div>
                                     </div>
                                 ) : (
                                     <button onClick={onLogin} className="w-full neu-btn text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
