@@ -33,7 +33,7 @@
         <div class="absolute top-0 left-0 w-full h-1 bg-[#258FAF] rounded-t-2xl"></div>
         
         <h1 class="text-xl font-bold text-[#258FAF] mb-2 flex items-center justify-center gap-2">
-            <i class="fas fa-tools"></i> 修復＆起動ツール
+            <i class="fas fa-tools"></i> 修復＆起動ツール V5
         </h1>
         <p class="text-xs text-gray-400 mb-6">
             通信エラーを直し、データを復元して<br>アプリを起動します。
@@ -67,24 +67,36 @@
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // 起動時にゾンビSWを即死させる（エラーハンドリング強化版）
+        // 重要：ホーム画面から開いている場合は警告を出す
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+        if (isStandalone) {
+            alert("⚠️ 重要 ⚠️\nこの修復ツールは「ホーム画面のアイコン」からは正しく動きません。\n\nSafariブラウザを開いて、そこからアクセスしてください。");
+        }
+
+        // 起動時にゾンビSWを即死させ、リロードする
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.getRegistrations()
                     .then(function(registrations) {
                         if (registrations.length > 0) {
-                            log("⚠️ 古い通信設定を発見");
+                            log("⚠️ 邪魔なService Workerを発見");
+                            let count = 0;
                             for(let registration of registrations) {
-                                registration.unregister().then(() => log("🔥 削除しました"));
+                                registration.unregister().then(() => {
+                                    log("🔥 削除しました: " + registration.scope);
+                                    count++;
+                                    if(count === registrations.length) {
+                                        log("♻️ クリーンにするためリロードします...");
+                                        setTimeout(() => window.location.reload(), 1000);
+                                    }
+                                });
                             }
                         } else {
                             log("✅ 通信環境はクリーンです");
                         }
                     })
                     .catch(function(error) {
-                        console.warn("Service Worker check skipped:", error);
-                        // エラーが出ても動作に支障はないのでログだけ出す
-                        log("ℹ️ SWチェック: スキップ (" + error.name + ")");
+                        console.warn("SW Check skipped", error);
                     });
             });
         }
@@ -99,8 +111,22 @@
             measurementId: "G-YD40SF3F32"
         };
         
-        firebase.initializeApp(firebaseConfig);
+        try {
+            firebase.initializeApp(firebaseConfig);
+        } catch(e) {
+            console.error(e);
+        }
+        
         const db_firebase = firebase.firestore();
+        
+        // 【重要】オフラインエラー対策：強制的にロングポーリングを使用する
+        try {
+            db_firebase.settings({ experimentalForceLongPolling: true, merge: true });
+            log("✅ 通信モード: 強制ロングポーリング");
+        } catch(e) {
+            log("⚠️ 設定警告: " + e.message);
+        }
+
         const auth = firebase.auth();
         const db = new Dexie('WordloopDB');
         db.version(3).stores({ words: '++id, word, nextReview, interval, repetition, efactor, addedAt, folder', deleted_words: 'word' });
@@ -110,26 +136,32 @@
         const statusEl = document.getElementById('status');
         let currentUser = null;
 
-        // ログイン処理（ポップアップ）
+        // ログイン処理
         function startLogin() {
-            loginBtn.disabled = true;
             log("ログイン画面を開きます...");
             
             const provider = new firebase.auth.GoogleAuthProvider();
-            auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-                .then(() => { return auth.signInWithPopup(provider); })
+            
+            auth.signInWithPopup(provider)
                 .then((result) => {
                     log("🎉 ログイン成功");
                     currentUser = result.user;
                     statusEl.innerText = currentUser.email;
                     statusEl.style.color = "#258FAF";
-                    // そのまま復旧へ
-                    restoreData();
+                    
+                    loginBtn.disabled = true;
+                    loginBtn.innerText = "データ復元中...";
+                    
+                    // 少し待ってから復元開始（通信安定のため）
+                    setTimeout(restoreData, 500);
                 })
                 .catch((error) => {
                     log("❌ エラー: " + error.message);
-                    loginBtn.disabled = false;
-                    alert("ログインできませんでした。\nポップアップを許可してください。");
+                    if (error.code === 'auth/popup-blocked' || error.message.includes('popup')) {
+                        alert("⚠️ ポップアップがブロックされました。\n\niPhoneの「設定 > Safari > ポップアップブロック」をOFFにして、このページをリロードしてください。");
+                    } else {
+                        alert("ログインエラー: " + error.message);
+                    }
                 });
         }
 
@@ -137,13 +169,26 @@
         async function restoreData() {
             log("クラウドからデータを探します...");
             
+            // 念のためネットワークチェック
+            if (!navigator.onLine) {
+                log("⚠️ ネットワーク未接続の可能性があります");
+            }
+
             try {
-                const doc = await db_firebase.collection('users').doc(currentUser.uid).get();
+                // 10秒のタイムアウトを設定
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("タイムアウト: 通信がブロックされています。Wi-Fiを切って4G/5Gで試してください。")), 10000)
+                );
+                
+                const docPromise = db_firebase.collection('users').doc(currentUser.uid).get();
+
+                const doc = await Promise.race([docPromise, timeoutPromise]);
                 
                 if (!doc.exists) {
                     log("⚠️ データが見つかりません");
                     alert("クラウドにデータがありません。\nPCから送信されていますか？");
                     loginBtn.disabled = false;
+                    loginBtn.innerText = "再試行";
                     return;
                 }
 
@@ -165,16 +210,17 @@
                 loginBtn.style.display = 'none';
                 goAppBtn.style.display = 'flex';
                 log("🚀 準備完了！アプリを起動してください");
+                alert("大成功です！\n下の「アプリを起動する」ボタンを押してください。");
                 
             } catch (e) {
                 log("❌ エラー: " + e.message);
                 loginBtn.disabled = false;
+                loginBtn.innerText = "再試行";
             }
         }
 
         // アプリへ移動
         function goToApp() {
-            // 同じウィンドウ内で移動することで、PWAの状態を引き継ぐ
             window.location.href = "./wordrobe.html";
         }
     </script>
