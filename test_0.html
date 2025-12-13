@@ -767,7 +767,7 @@
             );
         };
 
-       const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout, openAlert, openConfirm }) => {
+      const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout, openAlert, openConfirm }) => {
             const [apiKey, setApiKey] = useState('');
             const [isSaved, setIsSaved] = useState(false);
             const [testStatus, setTestStatus] = useState(null);
@@ -840,7 +840,7 @@
                     const btn = document.getElementById('sync-btn');
                     if (btn) btn.classList.add('fa-spin');
 
-                    const doc = await db_firebase.collection('users').doc(user.uid).get();
+                    const doc = await db_firebase.collection('users').doc(user.uid).get({ source: 'server' });
                     
                     if (doc.exists) {
                         const cloudWords = doc.data().words || [];
@@ -864,7 +864,33 @@
                     console.error(e);
                     const btn = document.getElementById('sync-btn');
                     if(btn) btn.classList.remove('fa-spin');
-                    openAlert(`エラーが発生しました:\n${e.message}`);
+                    
+                    if (e.message.includes("offline")) {
+                        openAlert("インターネットに繋がりません。\nサーバーからの強制取得に失敗しました。");
+                    } else {
+                        openAlert(`エラーが発生しました:\n${e.message}`);
+                    }
+                }
+            };
+
+            const handleEmergencyReset = async () => {
+                if (!confirm("「オフライン」エラーが出る場合の修復機能です。\n\nアプリの通信設定をリセットして再読み込みします。\n（※単語データは消えません）")) return;
+                
+                try {
+                    if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        for (let registration of registrations) {
+                            await registration.unregister();
+                        }
+                    }
+                    const cacheKeys = await caches.keys();
+                    for (let key of cacheKeys) {
+                        await caches.delete(key);
+                    }
+                    alert("通信設定をリセットしました。\nOKを押すとアプリを再起動します。");
+                    window.location.reload();
+                } catch(e) {
+                    alert("エラー: " + e.message);
                 }
             };
 
@@ -957,25 +983,17 @@
                             <div>
                                 {user ? (
                                     <div className="neu-pressed bg-[#258FAF]/5 p-5 rounded-xl border border-[#258FAF]/20 text-center relative">
-                                        
-                                        {/* ユーザー情報 */}
                                         <div className="mb-4">
                                             <p className="text-xs text-[#258FAF] font-bold">Logged in</p>
                                             <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-tight">{user.email || user.uid}</p>
                                         </div>
-
-                                        {/* ボタンエリア：ログアウトとグルグルを横並び */}
                                         <div className="flex items-center justify-center gap-3">
-                                            
-                                            {/* 1. ログアウトボタン */}
                                             <button 
                                                 onClick={onLogout} 
                                                 className="text-[10px] text-red-400 hover:text-red-500 bg-white border border-red-100 px-5 py-2.5 rounded-lg font-bold shadow-sm transition-colors active:scale-95"
                                             >
                                                 ログアウト
                                             </button>
-
-                                            {/* 2. グルグルボタン（クラウドから復元） */}
                                             <button 
                                                 onClick={handleForceDownload} 
                                                 className="w-9 h-9 rounded-full bg-white text-[#258FAF] border border-[#258FAF]/20 shadow-sm flex items-center justify-center hover:bg-[#258FAF] hover:text-white transition-all active:scale-95 group"
@@ -983,7 +1001,6 @@
                                             >
                                                 <i id="sync-btn" className="fas fa-sync-alt group-active:rotate-180 transition-transform duration-500"></i>
                                             </button>
-                                            
                                         </div>
                                     </div>
                                 ) : (
@@ -1009,6 +1026,10 @@
                         </div>
                         
                         <div className="mt-8 flex flex-col items-center gap-4">
+                            <button onClick={handleEmergencyReset} className="text-[9px] text-gray-300 hover:text-red-400 underline">
+                                通信エラーの修復（リセット）
+                            </button>
+
                             <div className="flex gap-3 w-full">
                                 <a 
                                     href="https://buymeacoffee.com/conizm" 
