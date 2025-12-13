@@ -70,3 +70,37 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
+
+
+
+// 1. Firebaseのライブラリを読み込む（ServiceWorker用）
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+
+// 2. Firebaseを初期化する
+firebase.initializeApp({
+  apiKey: "AIzaSyCqoqNq7N-x5Wr6TsJkyCU0J6o-Mj1Ir8g",
+  authDomain: "conizm-01.firebaseapp.com",
+  projectId: "conizm-01",
+  storageBucket: "conizm-01.firebasestorage.app",
+  messagingSenderId: "180210157068",
+  appId: "1:180210157068:web:e03a373dd3f818cdee1029",
+});
+
+// 3. バックグラウンド通知の受け取り設定
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage((payload) => {
+  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  
+  // 通知のタイトルと中身を取り出す
+  const notificationTitle = payload.notification.title;
+  const notificationOptions = {
+    body: payload.notification.body,
+    icon: './images/wordrobe-icon.png', // アプリのアイコンを表示
+  };
+
+  // 実際にスマホに通知を出す命令
+  self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
