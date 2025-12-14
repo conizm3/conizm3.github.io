@@ -779,7 +779,13 @@
                 };
             }, [isOpen]);
 
+            // ★修正ポイント: ログインしていなければ警告を出して止める
             const handleNotificationClick = async () => {
+                if (!user) {
+                    openAlert('通知機能を利用するには、\nGoogleアカウントでのログインが必要です。');
+                    return;
+                }
+
                 if (notifPermission === 'granted') {
                     openAlert('通知は既に許可されています。\n停止する場合は、端末またはブラウザの設定から通知をオフにしてください。');
                 } else {
@@ -2062,7 +2068,6 @@
                 reader.readAsText(file);
             };
 
-            // ★修正: Appコンポーネント内に移動させ、userやsetToastMsgを参照できるように修正
             const requestNotificationPermission = async () => {
                 try {
                     const permission = await Notification.requestPermission();
