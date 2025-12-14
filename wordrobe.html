@@ -2042,9 +2042,12 @@ const requestNotificationPermission = async () => {
                 console.log("Token:", token);
                 setToastMsg("通知設定が完了しました！");
                 if (user) {
-
+                    
+                    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    
                     await db_firebase.collection('users').doc(user.uid).update({ 
                         fcmToken: token,
+                        timeZone: timeZone,
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                 }
