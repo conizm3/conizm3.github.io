@@ -26,6 +26,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
 
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -311,9 +312,7 @@
         const translateText = async (text, langPair = "en|ja") => {
             if (!text) return null;
             const [source, target] = langPair.split('|');
-            
             const gasUrl = `${myGasProxy}?text=${encodeURIComponent(text)}&source=${source}&target=${target}`;
-            
             try {
                 const res = await fetchWithTimeout(gasUrl, {}, 4000);
                 if (!res.ok) return null;
@@ -330,7 +329,6 @@
         const fetchAIExplanation = async (term, apiKey) => {
             if (!apiKey) return null;
             const cleanKey = apiKey.trim(); 
-
             const prompt = `「${term}」という言葉について、以下の情報をJSON形式で出力してください。Markdownのコードブロックは使わず、生のJSONテキストのみを返してください。
             キーは以下の通りです:
             "simpleTranslation": 最も一般的で頻度の高い日本語訳（単語〜短いフレーズ）。注意: 1. 'API'や'Browser'のような純粋な技術用語は、そのままカタカナや専門用語で訳してください。 2. ただし、'prompt'（迅速な vs コマンド入力）や'monitor'（監視する vs 画面）のように、一般的な意味と技術的意味の両方を持つ多義語の場合は、一般的な意味（日常・ビジネス）を優先してください。
@@ -367,7 +365,6 @@
                     if (data?.candidates?.[0]?.content?.parts?.[0]) {
                         text = data.candidates[0].content.parts[0].text;
                     }
-                    
                     if (text) {
                         try {
                             const fence = "`" + "`" + "`";
@@ -423,19 +420,14 @@
                     if (isJpSearch) {
                         const entry = jishoData.data[0];
                         const englishDef = entry.senses[0].english_definitions[0];
-                        
                         const translated = await translateText(term, "ja|en");
-                        
                         if (translated && translated !== term) {
                             searchWord = translated;
                         } else {
                             searchWord = englishDef;
                         }
-                        
                         primaryTrans = term;
-                        
                         pronunciation = ""; 
-
                         entry.senses.slice(0, 3).forEach(s => meanings.push({ partOfSpeech: s.parts_of_speech.join(', ') || 'Common', definitions: [{ ja: s.english_definitions.join('; '), en: "", exEn: "", exJa: "" }] }));
                     } else {
                         let entries = jishoData.data;
@@ -466,13 +458,10 @@
                      const fd = await fetchFreeDictData(term);
                      if (!fd || fd.length === 0) throw new Error("NOT_FOUND");
                 }
-                
                 let trans = await translateText(term, isJpSearch ? "ja|en" : "en|ja");
-                
                 if (!trans || trans === term) {
                     throw new Error("NOT_FOUND");
                 }
-                
                 searchWord = isJpSearch ? trans : term;
                 primaryTrans = isJpSearch ? term : trans;
                 meanings.push({ partOfSpeech: "Translation", definitions: [{ ja: primaryTrans, en: "", exEn: "", exJa: "" }] });
@@ -767,7 +756,7 @@
             );
         };
 
-      const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout, openAlert, openConfirm }) => {
+        const SettingsModal = ({ isOpen, onClose, onExport, onImport, user, onLogin, onLogout, openAlert, openConfirm, onRequestNotification }) => {
             const [apiKey, setApiKey] = useState('');
             const [isSaved, setIsSaved] = useState(false);
             const [testStatus, setTestStatus] = useState(null);
@@ -837,60 +826,26 @@
                 if (!confirm("クラウド上のデータで、今のデータを上書きしてもよろしいですか？")) return;
 
                 try {
-                    const btn = document.getElementById('sync-btn');
-                    if (btn) btn.classList.add('fa-spin');
-
-                    const doc = await db_firebase.collection('users').doc(user.uid).get({ source: 'server' });
+                    const doc = await db_firebase.collection('users').doc(user.uid).get();
                     
                     if (doc.exists) {
                         const cloudWords = doc.data().words || [];
                         
                         if (cloudWords.length === 0) {
-                            if(btn) btn.classList.remove('fa-spin');
                             return openAlert("クラウドにデータがありませんでした");
                         }
 
                         await db.words.clear();
                         await db.words.bulkAdd(cloudWords);
                         
-                        if(btn) btn.classList.remove('fa-spin');
                         alert(`復元成功！\n${cloudWords.length}語をダウンロードしました。\n画面を更新します。`);
                         window.location.reload();
                     } else {
-                        if(btn) btn.classList.remove('fa-spin');
                         openAlert("クラウドにデータが見つかりませんでした");
                     }
                 } catch (e) {
                     console.error(e);
-                    const btn = document.getElementById('sync-btn');
-                    if(btn) btn.classList.remove('fa-spin');
-                    
-                    if (e.message.includes("offline")) {
-                        openAlert("インターネットに繋がりません。\nサーバーからの強制取得に失敗しました。");
-                    } else {
-                        openAlert(`エラーが発生しました:\n${e.message}`);
-                    }
-                }
-            };
-
-            const handleEmergencyReset = async () => {
-                if (!confirm("「オフライン」エラーが出る場合の修復機能です。\n\nアプリの通信設定をリセットして再読み込みします。\n（※単語データは消えません）")) return;
-                
-                try {
-                    if ('serviceWorker' in navigator) {
-                        const registrations = await navigator.serviceWorker.getRegistrations();
-                        for (let registration of registrations) {
-                            await registration.unregister();
-                        }
-                    }
-                    const cacheKeys = await caches.keys();
-                    for (let key of cacheKeys) {
-                        await caches.delete(key);
-                    }
-                    alert("通信設定をリセットしました。\nOKを押すとアプリを再起動します。");
-                    window.location.reload();
-                } catch(e) {
-                    alert("エラー: " + e.message);
+                    openAlert(`エラーが発生しました:\n${e.message}`);
                 }
             };
 
@@ -982,26 +937,24 @@
                             </div>
                             <div>
                                 {user ? (
-                                    <div className="neu-pressed bg-[#258FAF]/5 p-5 rounded-xl border border-[#258FAF]/20 text-center relative">
-                                        <div className="mb-4">
-                                            <p className="text-xs text-[#258FAF] font-bold">ログイン中</p>
-                                            <p className="text-[10px] text-gray-500 font-mono mt-0.5 tracking-tight">{user.email || user.uid}</p>
-                                        </div>
-                                        <div className="flex items-center justify-center gap-3">
+                                    <div className="neu-pressed bg-[#258FAF]/5 p-4 rounded-xl border border-[#258FAF]/20 relative overflow-hidden text-center">
+                                        <p className="text-sm text-[#258FAF] font-bold mb-2">ログイン中</p>
+                                        <p className="text-xs text-gray-500 mb-3">{user.email || user.uid}</p>
+                                        <div className="flex gap-2 justify-center mb-3">
                                             <button 
-                                                onClick={onLogout} 
-                                                className="text-[10px] text-red-400 hover:text-red-500 bg-white border border-red-100 px-5 py-2.5 rounded-lg font-bold shadow-sm transition-colors active:scale-95"
+                                                onClick={handleManualSync} 
+                                                className="bg-[#258FAF] text-white px-3 py-2 rounded-lg text-xs font-bold shadow-md flex items-center justify-center gap-1"
                                             >
-                                                ログアウト
+                                                <i className="fas fa-upload"></i> 保存
                                             </button>
                                             <button 
                                                 onClick={handleForceDownload} 
-                                                className="w-9 h-9 rounded-full bg-white text-[#258FAF] border border-[#258FAF]/20 shadow-sm flex items-center justify-center hover:bg-[#258FAF] hover:text-white transition-all active:scale-95 group"
-                                                title="データを復元（受信）"
+                                                className="bg-white text-[#258FAF] border border-[#258FAF] px-3 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-1"
                                             >
-                                                <i id="sync-btn" className="fas fa-sync-alt group-active:rotate-180 transition-transform duration-500"></i>
+                                                <i className="fas fa-download"></i> 受信
                                             </button>
                                         </div>
+                                        <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
                                     </div>
                                 ) : (
                                     <button onClick={onLogin} className="w-full neu-btn text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
@@ -1026,8 +979,6 @@
                         </div>
                         
                         <div className="mt-8 flex flex-col items-center gap-4">
-                            
-
                             <div className="flex gap-3 w-full">
                                 <a 
                                     href="https://buymeacoffee.com/conizm" 
@@ -1053,21 +1004,20 @@
                                     </svg>
                                     <span className="tracking-wide font-bold">Buy Me a Coffee</span>
                                 </a>
-                                <a 
-                                    href="https://www.instagram.com/conizm_/" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="neu-btn w-12 h-12 flex items-center justify-center rounded-xl text-[#258FAF] hover:text-[#C13584] transition-colors duration-300"
+                                
+                                <button 
+                                    onClick={onRequestNotification} 
+                                    className="neu-btn w-12 h-12 flex items-center justify-center rounded-xl text-[#258FAF] hover:text-[#258FAF] transition-colors duration-300"
+                                    title="毎日の通知をONにする"
                                 >
-                                    <i className="fab fa-instagram text-2xl"></i>
-                                </a>
+                                    <i className="far fa-bell text-2xl"></i>
+                                </button>
                             </div>
 
                             <div className="flex flex-col items-center gap-1">
                                 <a href="https://wordrobe.cc/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-400 hover:text-gray-600 border-b border-transparent hover:border-gray-600 transition-colors mb-1">アプリ概要 / プライバシーポリシー</a>
                                 <p className="text-[10px] text-gray-300 font-mono">
-                                    &copy; 2025 conizm_ 
-                                    <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.2.3</a>
+                                    &copy; 2025 <a href="https://www.instagram.com/conizm_/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">conizm_</a> <a href="https://maze-dracorex-e48.notion.site/2c504d09b6cc806a8bdbeb3b6d2438f6?pvs=73" target="_blank" rel="noopener noreferrer" className="hover:text-gray-500 transition-colors">v.1.3.0</a>
                                 </p>
                             </div>
                         </div>
@@ -1179,7 +1129,7 @@
                                      else openAlert('検索エラーが発生しました');
                                  }
                              });
-                         } else {
+                          } else {
                             setLoading(false);
                             setIsEnriching(false);
                             if (err.message === "NOT_FOUND") openAlert('見つかりませんでした');
@@ -1295,7 +1245,6 @@
                         <div ref={resultRef} className="neu-flat p-5 md:p-6 mb-8 fade-in relative mt-8 allow-select">
                             {isFromList && <button onClick={onBack} className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-white text-gray-400 w-10 h-10 rounded-full shadow-md flex items-center justify-center z-20 hover:text-[#258FAF] transition-colors border border-gray-100"><i className="fas fa-times text-lg"></i></button>}
                             
-                            {/* ▼▼▼ メインの単語カード部分 ▼▼▼ */}
                             <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
                                 <div>
                                     <h2 className="text-2xl md:text-4xl font-bold text-[#258FAF] break-all mb-1">{currentData.word}</h2>
@@ -1308,7 +1257,6 @@
                                 </div>
                             </div>
 
-                            {/* ▼▼▼ ここから下がAIエリア ▼▼▼ */}
                             {currentData.aiData && (
                                 <div className="mb-6 fade-in">
                                     <div className="neu-pressed bg-[#258FAF]/5 p-4 rounded-xl border border-[#258FAF]/20 relative overflow-hidden">
@@ -1386,7 +1334,6 @@
                                 )}
                             </div>
 
-                            {/* ▼▼▼ ここに出典表示を移動しました ▼▼▼ */}
                             {currentData.tips && (
                                 <div className="mt-8 pt-4 border-t border-gray-100 text-right">
                                     <span className="text-[10px] text-gray-400 opacity-70">
@@ -1394,7 +1341,6 @@
                                     </span>
                                 </div>
                             )}
-                            {/* ▲▲▲ ここまで ▲▲▲ */}
 
                         </div>
                     )}
@@ -1449,8 +1395,8 @@
             const [selectedFolder, setSelectedFolder] = useState('ALL');
             const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
 
-            const displayedWords = selectedFolder === 'ALL' 
-                ? savedWords 
+            const displayedWords = selectedFolder === 'ALL' 
+                ? savedWords 
                 : savedWords.filter(w => w.folder === selectedFolder);
 
             if (!savedWords || savedWords.length === 0) {
@@ -1515,13 +1461,13 @@
 
         const ReviewView = ({ savedWords, folderList, onFinish, openAlert }) => {
             const [isStarted, setIsStarted] = useState(false);
-            const [testMode, setTestMode] = useState('en_ja'); 
+            const [testMode, setTestMode] = useState('en_ja'); 
             const [targetFolder, setTargetFolder] = useState('ALL');
             const [queue, setQueue] = useState([]);
             const [index, setIndex] = useState(0);
             const [isFlipped, setIsFlipped] = useState(false);
             const [isExiting, setIsExiting] = useState(false);
-            const [isSwipeAction, setIsSwipeAction] = useState(null); 
+            const [isSwipeAction, setIsSwipeAction] = useState(null); 
             const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
             const touchStartX = useRef(null);
             const cardRef = useRef(null);
@@ -1553,7 +1499,7 @@
                     setIndex(prev => prev + 1);
                     setIsExiting(false);
                     setIsSwipeAction(null);
-                    if (cardRef.current) cardRef.current.style.transform = ''; 
+                    if (cardRef.current) cardRef.current.style.transform = ''; 
                 }, 250);
             };
 
@@ -1599,8 +1545,8 @@
                 if (!touchStartX.current || !cardRef.current) return;
                 const touchEndX = e.changedTouches[0].clientX;
                 const distance = touchStartX.current - touchEndX;
-                if (Math.abs(distance) > 100) { 
-                    if (distance > 0) handleNext(false); else handleNext(true); 
+                if (Math.abs(distance) > 100) { 
+                    if (distance > 0) handleNext(false); else handleNext(true); 
                 } else {
                     cardRef.current.style.transform = '';
                     setIsSwipeAction(null);
@@ -1754,14 +1700,13 @@
                 return localStorage.getItem('is_first_launch_v1') !== 'false';
             });
 
-            // Splash visible initially if first launch
             const [showSplash, setShowSplash] = useState(isFirstLaunch);
 
             useEffect(() => {
                 if (showSplash) {
                     const timer = setTimeout(() => {
                         setShowSplash(false);
-                    }, 2500); // 2.5 seconds splash
+                    }, 2500); 
                     return () => clearTimeout(timer);
                 }
             }, [showSplash]);
@@ -1797,6 +1742,22 @@
 
             useEffect(() => {
                 if (auth) {
+                    try {
+                        
+                        auth.getRedirectResult().then((result) => {
+                            if (result && result.user) {
+                                setToastMsg('ログインしました');
+                                setIsCloudSynced(false); 
+                            }
+                        }).catch((error) => {
+                            if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/operation-not-supported-in-this-environment') {
+                                console.error(error);
+                            }
+                        });
+                    } catch(e) {
+                  
+                    }
+
                     auth.onAuthStateChanged(async (u) => {
                         setUser(u);
                         if (u) {
@@ -1806,35 +1767,48 @@
                                 const doc = await db_firebase.collection('users').doc(u.uid).get();
                                 if (doc.exists) {
                                     const cloudWords = doc.data().words || [];
-                                    
-                                    await db.transaction('rw', db.words, db.deleted_words, async () => {
-                                        const localWords = await db.words.toArray();
-                                        const localWordMap = new Map(localWords.map(w => [w.word, w]));
-                                        
-                                        const deletedItems = await db.deleted_words.toArray();
-                                        const deletedSet = new Set(deletedItems.map(d => d.word));
+                                    const localCount = await db.words.count(); 
 
-                                        const wordsToPut = [];
-                                        for (const cw of cloudWords) {
-                                            if (!localWordMap.has(cw.word) && !deletedSet.has(cw.word)) {
-                                                const { id, ...wordWithoutId } = cw;
-                                                wordsToPut.push(wordWithoutId);
+                                    if (localCount === 0 && cloudWords.length > 0) {
+                                        await db.words.bulkAdd(cloudWords);
+                                        
+                                        const allWords = await db.words.toArray();
+                                        allWords.sort((a,b) => (b.addedAt || 0) - (a.addedAt || 0));
+                                        setSavedWords(allWords);
+                                        
+                                        const uniqueFolders = new Set(['main', ...allWords.map(w => w.folder || 'main')]);
+                                        setFolders(Array.from(uniqueFolders));
+                                        
+                                        setToastMsg('データを自動復元しました');
+                                    } 
+                                    else {
+                                        await db.transaction('rw', db.words, db.deleted_words, async () => {
+                                            const localWords = await db.words.toArray();
+                                            const localWordMap = new Map(localWords.map(w => [w.word, w]));
+                                            const deletedItems = await db.deleted_words.toArray();
+                                            const deletedSet = new Set(deletedItems.map(d => d.word));
+
+                                            const wordsToPut = [];
+                                            for (const cw of cloudWords) {
+                                                if (!localWordMap.has(cw.word) && !deletedSet.has(cw.word)) {
+                                                    const { id, ...wordWithoutId } = cw;
+                                                    wordsToPut.push(wordWithoutId);
+                                                }
                                             }
-                                        }
-                                        if (wordsToPut.length > 0) {
-                                            await db.words.bulkAdd(wordsToPut);
-                                        }
-                                    });
-                                    const allWords = await db.words.toArray();
-                                    allWords.sort((a,b) => (b.addedAt || 0) - (a.addedAt || 0));
-                                    
-                                    const migratedWords = allWords.map(w => !w.folder ? { ...w, folder: 'main' } : w);
-                                    setSavedWords(migratedWords);
-                                    
-                                    const uniqueFolders = new Set(['main', ...migratedWords.map(w => w.folder || 'main')]);
-                                    setFolders(Array.from(uniqueFolders));
-                                    
-                                    setToastMsg('データを同期しました');
+                                            if (wordsToPut.length > 0) {
+                                                await db.words.bulkAdd(wordsToPut);
+                                            }
+                                        });
+                                        
+                                        const allWords = await db.words.toArray();
+                                        allWords.sort((a,b) => (b.addedAt || 0) - (a.addedAt || 0));
+                                        const migratedWords = allWords.map(w => !w.folder ? { ...w, folder: 'main' } : w);
+                                        setSavedWords(migratedWords);
+                                        const uniqueFolders = new Set(['main', ...migratedWords.map(w => w.folder || 'main')]);
+                                        setFolders(Array.from(uniqueFolders));
+                                        
+                                        setToastMsg('データを同期しました');
+                                    }
                                 }
                                 setIsCloudSynced(true);
                             } catch (err) {
@@ -2049,6 +2023,33 @@
                 reader.readAsText(file);
             };
 
+            const requestNotificationPermission = async () => {
+                try {
+                    const permission = await Notification.requestPermission();
+                    if (permission === 'granted') {
+                        const messaging = firebase.messaging();
+                        const token = await messaging.getToken({ 
+                            vapidKey: "C6aZKEoOo1RjUiQLZcwcQ5jWL2HNJ5MGYRMCUfCIUVc" 
+                        });
+
+                        if (token) {
+                            console.log("Token:", token);
+                            setToastMsg("通知設定が完了しました！");
+                            if (user) {
+                                await db_firebase.collection('users').doc(user.uid).update({ fcmToken: token });
+                            }
+                        } else {
+                            setToastMsg("トークン取得失敗...");
+                        }
+                    } else {
+                        setToastMsg("通知を設定できませんでした");
+                    }
+                } catch (error) {
+                    console.error("通知設定エラー:", error);
+                    setToastMsg("SORRY! 通知機能が利用できない環境です");
+                }
+            };
+
             const uiDisabledClass = isFirstLaunch ? 'pointer-events-none opacity-50' : '';
 
 
@@ -2057,7 +2058,6 @@
                     
                     {showSplash && <SplashScreen />}
                     
-                    {/* Welcome Modal appears if it is first launch AND splash is done */}
                     <WelcomeModal isOpen={isFirstLaunch && !showSplash} onClose={handleCompleteOnboarding} />
 
                     {!isFirstLaunch && (
@@ -2099,7 +2099,7 @@
                         </>
                     )}
 
-                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} user={user} onLogin={handleLogin} onLogout={handleLogout} openAlert={openAlert} openConfirm={openConfirm} />
+                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} user={user} onLogin={handleLogin} onLogout={handleLogout} openAlert={openAlert} openConfirm={openConfirm} onRequestNotification={requestNotificationPermission} />
                     <FolderSelectModal isOpen={isFolderModalOpen} onClose={() => setIsFolderModalOpen(false)} folders={folders} onSelectFolder={handleChangeFolder} onCreateFolder={handleCreateFolder} />
                     <FolderManagerModal isOpen={isFolderManagerOpen} onClose={() => setIsFolderManagerOpen(false)} folders={folders} onRename={handleRenameFolder} onDelete={handleDeleteFolder} />
                     <DialogModal isOpen={dialog.isOpen} type={dialog.type} message={dialog.message} onConfirm={dialog.onConfirm} onCancel={() => setDialog(prev => ({ ...prev, isOpen: false }))} />
@@ -2114,12 +2114,13 @@
     </script>
     
     <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./service-worker.js');
-    });
-  }
-</script>
+        
+    if ('serviceWorker' in navigator && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+        window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js');
+        });
+    }
+    </script>
     
 </body>
 </html>
