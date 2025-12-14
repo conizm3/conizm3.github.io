@@ -760,38 +760,6 @@
             const [apiKey, setApiKey] = useState('');
             const [isSaved, setIsSaved] = useState(false);
             const [testStatus, setTestStatus] = useState(null);
-            const [notifPermission, setNotifPermission] = useState(Notification.permission);
-
-            useEffect(() => {
-                const checkPermission = () => {
-                    setNotifPermission(Notification.permission);
-                };
-
-                checkPermission();
-                document.addEventListener('visibilitychange', checkPermission);
-                
-                if (isOpen) {
-                    checkPermission();
-                }
-
-                return () => {
-                    document.removeEventListener('visibilitychange', checkPermission);
-                };
-            }, [isOpen]);
-
-            const handleNotificationClick = async () => {
-                if (!user) {
-                    openAlert('通知機能を利用するには、\nGoogleアカウントでのログインが必要です。');
-                    return;
-                }
-
-                if (notifPermission === 'granted') {
-                    openAlert('通知は既に許可されています。\n停止する場合は、端末またはブラウザの設定から通知をオフにしてください。');
-                } else {
-                    await onRequestNotification();
-                    setNotifPermission(Notification.permission);
-                }
-            };
 
             useEffect(() => {
                 if (isOpen) {
@@ -897,9 +865,6 @@
             };
 
             if (!isOpen) return null;
-            
-            const isGranted = notifPermission === 'granted';
-
             return (
                 <div className="fixed inset-0 bg-slate-100/90 z-[60] flex items-center justify-center p-4 backdrop-blur-sm fade-in">
                     <div className="neu-flat bg-[#F8FAFC] p-6 w-full max-w-md max-h-[90vh] overflow-y-auto border border-white">
@@ -988,8 +953,8 @@
                                             >
                                                 <i className="fas fa-download"></i> 受信
                                             </button>
-                                            <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
                                         </div>
+                                        <button onClick={onLogout} className="bg-white text-red-500 border border-red-200 px-4 py-2 rounded-lg text-xs font-bold shadow-sm">ログアウト</button>
                                     </div>
                                 ) : (
                                     <button onClick={onLogin} className="w-full neu-btn text-gray-700 font-bold p-3 rounded-xl shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50">
@@ -1041,15 +1006,11 @@
                                 </a>
                                 
                                 <button 
-                                    onClick={handleNotificationClick} 
-                                    className={`neu-btn w-12 h-12 flex items-center justify-center rounded-xl transition-colors duration-300 ${isGranted ? 'text-[#258FAF]' : 'text-gray-400'}`}
-                                    title={isGranted ? "通知オン" : "通知を許可する"}
+                                    onClick={onRequestNotification} 
+                                    className="neu-btn w-12 h-12 flex items-center justify-center rounded-xl text-[#258FAF] hover:text-[#258FAF] transition-colors duration-300"
+                                    title="毎日の通知をONにする"
                                 >
-                                    {isGranted ? (
-                                        <i className="fas fa-bell text-2xl"></i>
-                                    ) : (
-                                        <i className="fas fa-bell-slash text-2xl"></i>
-                                    )}
+                                    <i className="far fa-bell text-2xl"></i>
                                 </button>
                             </div>
 
@@ -1367,8 +1328,8 @@
                                 
                                 {currentData.synonyms && currentData.synonyms.length > 0 && (
                                     <div className="pt-4 border-t border-gray-100">
-                                            <span className="text-xs font-bold text-gray-400 block mb-2">類義語 (Synonyms)</span>
-                                            <div className="flex flex-wrap gap-2">{currentData.synonyms.slice(0,8).map((syn, i) => <span key={i} className="neu-pressed px-3 py-1 text-xs text-gray-500 rounded-lg">{syn}</span>)}</div>
+                                        <span className="text-xs font-bold text-gray-400 block mb-2">類義語 (Synonyms)</span>
+                                        <div className="flex flex-wrap gap-2">{currentData.synonyms.slice(0,8).map((syn, i) => <span key={i} className="neu-pressed px-3 py-1 text-xs text-gray-500 rounded-lg">{syn}</span>)}</div>
                                     </div>
                                 )}
                             </div>
@@ -1434,8 +1395,8 @@
             const [selectedFolder, setSelectedFolder] = useState('ALL');
             const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
 
-            const displayedWords = selectedFolder === 'ALL' 
-                ? savedWords 
+            const displayedWords = selectedFolder === 'ALL' 
+                ? savedWords 
                 : savedWords.filter(w => w.folder === selectedFolder);
 
             if (!savedWords || savedWords.length === 0) {
@@ -1500,13 +1461,13 @@
 
         const ReviewView = ({ savedWords, folderList, onFinish, openAlert }) => {
             const [isStarted, setIsStarted] = useState(false);
-            const [testMode, setTestMode] = useState('en_ja'); 
+            const [testMode, setTestMode] = useState('en_ja'); 
             const [targetFolder, setTargetFolder] = useState('ALL');
             const [queue, setQueue] = useState([]);
             const [index, setIndex] = useState(0);
             const [isFlipped, setIsFlipped] = useState(false);
             const [isExiting, setIsExiting] = useState(false);
-            const [isSwipeAction, setIsSwipeAction] = useState(null); 
+            const [isSwipeAction, setIsSwipeAction] = useState(null); 
             const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
             const touchStartX = useRef(null);
             const cardRef = useRef(null);
@@ -1538,7 +1499,7 @@
                     setIndex(prev => prev + 1);
                     setIsExiting(false);
                     setIsSwipeAction(null);
-                    if (cardRef.current) cardRef.current.style.transform = ''; 
+                    if (cardRef.current) cardRef.current.style.transform = ''; 
                 }, 250);
             };
 
@@ -1584,8 +1545,8 @@
                 if (!touchStartX.current || !cardRef.current) return;
                 const touchEndX = e.changedTouches[0].clientX;
                 const distance = touchStartX.current - touchEndX;
-                if (Math.abs(distance) > 100) { 
-                    if (distance > 0) handleNext(false); else handleNext(true); 
+                if (Math.abs(distance) > 100) { 
+                    if (distance > 0) handleNext(false); else handleNext(true); 
                 } else {
                     cardRef.current.style.transform = '';
                     setIsSwipeAction(null);
@@ -1794,7 +1755,7 @@
                             }
                         });
                     } catch(e) {
-                      
+                  
                     }
 
                     auth.onAuthStateChanged(async (u) => {
@@ -2067,55 +2028,58 @@
                 reader.readAsText(file);
             };
 
-            const requestNotificationPermission = async () => {
-                try {
-                    const permission = await Notification.requestPermission();
-                    if (permission === 'granted') {
-                        const messaging = firebase.messaging();
-                        
-                        messaging.onMessage((payload) => {
-                            console.log('Message received. ', payload);
-                            
-                            const notificationTitle = payload.notification.title;
-                            const notificationOptions = {
-                                body: payload.notification.body,
-                                icon: 'https://conizm3.github.io/wordrobe/images/wordrobe-icon.png'
-                            };
-                        
-                            new Notification(notificationTitle, notificationOptions);
-                        });
-                        
-                        const registration = await navigator.serviceWorker.ready;
+const requestNotificationPermission = async () => {
+    try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            const messaging = firebase.messaging();
+            
+            messaging.onMessage((payload) => {
+                console.log('Message received. ', payload);
+                
+                const notificationTitle = payload.notification.title;
+                const notificationOptions = {
+                    body: payload.notification.body,
+                    icon: 'https://conizm3.github.io/wordrobe/images/wordrobe-icon.png'
+                };
+            
+                new Notification(notificationTitle, notificationOptions);
+            });
+            
+            const registration = await navigator.serviceWorker.ready;
 
-                        const token = await messaging.getToken({ 
-                            vapidKey: "BP12NDn7Ec3A2NNYwwyiRsplOpSNifZEHeq4W2cPWyXpIIlER3tp9OkW5V4U0LEJT-dzJ4tkqVp3_iIlBUAaVjU", 
-                            serviceWorkerRegistration: registration 
-                        });
+            const token = await messaging.getToken({ 
+                vapidKey: "BP12NDn7Ec3A2NNYwwyiRsplOpSNifZEHeq4W2cPWyXpIIlER3tp9OkW5V4U0LEJT-dzJ4tkqVp3_iIlBUAaVjU", 
+                serviceWorkerRegistration: registration 
+            });
 
-                        if (token) {
-                            console.log("Token:", token);
-                            setToastMsg("通知設定が完了しました！");
-                            if (user) {
-                                const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                                await db_firebase.collection('users').doc(user.uid).update({ 
-                                    fcmToken: token,
-                                    timeZone: timeZone,
-                                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                                });
-                            }
-                        } else {
-                            setToastMsg("トークンが取得できませんでした");
-                        }
-                    } else {
-                        setToastMsg("通知が許可されませんでした");
-                    }
-                } catch (error) {
-                    console.error("通知設定エラー:", error);
-                    setToastMsg(`エラー: ${error.message}`);
+            if (token) {
+                console.log("Token:", token);
+                setToastMsg("通知設定が完了しました！");
+                if (user) {
+                    
+                    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    
+                    await db_firebase.collection('users').doc(user.uid).update({ 
+                        fcmToken: token,
+                        timeZone: timeZone,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
                 }
-            };
+            } else {
+                setToastMsg("トークンが取得できませんでした");
+            }
+        } else {
+            setToastMsg("通知が許可されませんでした");
+        }
+    } catch (error) {
+        console.error("通知設定エラー:", error);
+        setToastMsg(`エラー: ${error.message}`);
+    }
+};
 
             const uiDisabledClass = isFirstLaunch ? 'pointer-events-none opacity-50' : '';
+
 
             return (
                 <div className="h-screen-safe">
@@ -2143,19 +2107,19 @@
                                 <button onClick={() => resetToHome()} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'search' ? 'tab-active' : 'tab-inactive'}`}><div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'search' ? 'neu-pressed' : ''}`}><i className="fas fa-search text-lg"></i></div><span className="text-[10px] font-bold">検索</span></button>
                                 <button onClick={() => setTab('review')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'review' ? 'tab-active' : 'tab-inactive'}`}>
                                     <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'review' ? 'neu-pressed' : ''}`}>
-                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                                                <g transform="rotate(-45 12 12)">
-                                                    <path fillRule="evenodd" clipRule="evenodd" d="M9 2H13L17 6V22H5V6L9 2ZM11 7.5C12.38 7.5 13.5 6.38 13.5 5C13.5 3.62 12.38 2.5 11 2.5C9.62 2.5 8.5 3.62 8.5 5C8.5 6.38 9.62 7.5 11 7.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-                                                </g>
-                                            </svg>
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                                            <g transform="rotate(-45 12 12)">
+                                                <path fillRule="evenodd" clipRule="evenodd" d="M9 2H13L17 6V22H5V6L9 2ZM11 7.5C12.38 7.5 13.5 6.38 13.5 5C13.5 3.62 12.38 2.5 11 2.5C9.62 2.5 8.5 3.62 8.5 5C8.5 6.38 9.62 7.5 11 7.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                                            </g>
+                                        </svg>
                                     </div>
                                     <span className="text-[10px] font-bold">復習</span>
                                 </button>
                                 <button onClick={() => setTab('list')} className={`nav-btn flex flex-col items-center w-1/3 ${tab === 'list' ? 'tab-active' : 'tab-inactive'}`}>
                                     <div className={`w-10 h-10 flex items-center justify-center rounded-xl mb-1 transition-all ${tab === 'list' ? 'neu-pressed' : ''}`}>
-                                            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
-                                                <path fillRule="evenodd" clipRule="evenodd" d="M6 2H11V22H6C4.89543 22 4 21.1046 4 20V4C4 2.89543 4.89543 2 6 2ZM13 2H18C19.1046 2 20 2.89543 20 4V20C20 21.1046 19.1046 22 18 22H13V2ZM9 11C8.44772 11 8 11.4477 8 12C8 12.5523 8.44772 13 9 13C9.55228 13 10 12.5523 10 12C10 11.4477 9.55228 11 9 11ZM15 11C14.4477 11 14 11.4477 14 12C14 12.5523 14.4477 13 15 13C15.5523 13 16 12.5523 16 12C16 11.4477 15.5523 11 15 11Z" />
-                                            </svg>
+                                        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                                            <path fillRule="evenodd" clipRule="evenodd" d="M6 2H11V22H6C4.89543 22 4 21.1046 4 20V4C4 2.89543 4.89543 2 6 2ZM13 2H18C19.1046 2 20 2.89543 20 4V20C20 21.1046 19.1046 22 18 22H13V2ZM9 11C8.44772 11 8 11.4477 8 12C8 12.5523 8.44772 13 9 13C9.55228 13 10 12.5523 10 12C10 11.4477 9.55228 11 9 11ZM15 11C14.4477 11 14 11.4477 14 12C14 12.5523 14.4477 13 15 13C15.5523 13 16 12.5523 16 12C16 11.4477 15.5523 11 15 11Z" />
+                                        </svg>
                                     </div>
                                     <span className="text-[10px] font-bold">単語棚</span>
                                 </button>
@@ -2179,18 +2143,13 @@
     
   <script>
         if ('serviceWorker' in navigator) {
-            // Check protocol before registering to avoid "URL protocol not supported" error in previews
-            if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(function(registration) {
-                        console.log('Service Worker registered:', registration.scope);
-                    })
-                    .catch(function(err) {
-                        console.error('Service Worker registration failed:', err);
-                    });
-            } else {
-                console.warn('Service Workers are not supported in this environment (protocol: ' + window.location.protocol + '). They require http or https.');
-            }
+            navigator.serviceWorker.register('./service-worker.js')
+                .then(function(registration) {
+                    console.log('Service Worker registered:', registration.scope);
+                })
+                .catch(function(err) {
+                    console.error('Service Worker registration failed:', err);
+                });
         }
 
         if ('clearAppBadge' in navigator) {
