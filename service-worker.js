@@ -6,14 +6,6 @@ const urlsToCache = [
   './wordrobe.html',
   './manifest.json',
   './images/wordrobe-icon.png',
-  // 外部ライブラリもキャッシュしておくとオフラインで動きます
-  'https://cdn.tailwindcss.com',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
-  'https://unpkg.com/dexie@3.2.4/dist/dexie.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-  'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap'
 ];
 
 // 1. インストール時：ファイルをキャッシュに保存
