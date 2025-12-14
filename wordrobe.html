@@ -2023,32 +2023,42 @@
                 reader.readAsText(file);
             };
 
-            const requestNotificationPermission = async () => {
-                try {
-                    const permission = await Notification.requestPermission();
-                    if (permission === 'granted') {
-                        const messaging = firebase.messaging();
-                        const token = await messaging.getToken({ 
-                            vapidKey: "C6aZKEoOo1RjUiQLZcwcQ5jWL2HNJ5MGYRMCUfCIUVc" 
-                        });
+         // HTMLファイル内の requestNotificationPermission 関数をこれに差し替え
 
-                        if (token) {
-                            console.log("Token:", token);
-                            setToastMsg("通知設定が完了しました！");
-                            if (user) {
-                                await db_firebase.collection('users').doc(user.uid).update({ fcmToken: token });
-                            }
-                        } else {
-                            setToastMsg("トークン取得失敗...");
-                        }
-                    } else {
-                        setToastMsg("通知を設定できませんでした");
-                    }
-                } catch (error) {
-                    console.error("通知設定エラー:", error);
-                    setToastMsg("SORRY! 通知機能が利用できない環境です");
+const requestNotificationPermission = async () => {
+    try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            const messaging = firebase.messaging();
+            
+            const registration = await navigator.serviceWorker.ready;
+
+            const token = await messaging.getToken({ 
+                vapidKey: "BP12NDn7Ec3A2NNYwwyiRsplOpSNifZEHeq4W2cPWyXpIIlER3tp9OkW5V4U0LEJT-dzJ4tkqVp3_iIlBUAaVjU", 
+                serviceWorkerRegistration: registration 
+            });
+
+            if (token) {
+                console.log("Token:", token);
+                setToastMsg("通知設定が完了しました！");
+                if (user) {
+
+                    await db_firebase.collection('users').doc(user.uid).update({ 
+                        fcmToken: token,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
                 }
-            };
+            } else {
+                setToastMsg("トークンが取得できませんでした");
+            }
+        } else {
+            setToastMsg("通知が許可されませんでした");
+        }
+    } catch (error) {
+        console.error("通知設定エラー:", error);
+        setToastMsg(`エラー: ${error.message}`);
+    }
+};
 
             const uiDisabledClass = isFirstLaunch ? 'pointer-events-none opacity-50' : '';
 
