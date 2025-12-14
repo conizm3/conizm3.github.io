@@ -1761,6 +1761,11 @@
                     auth.onAuthStateChanged(async (u) => {
                         setUser(u);
                         if (u) {
+                            const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                                db_firebase.collection('users').doc(u.uid).set({
+                                    timeZone: timeZone
+                                }, { merge: true });
+                            
                             setIsCloudSynced(false);
                             setToastMsg('ログインしました');
                             try {
