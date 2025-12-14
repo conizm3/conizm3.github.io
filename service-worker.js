@@ -3,9 +3,6 @@ const CACHE_NAME = 'wordrobe-v2-offline-ready';
 // キャッシュするファイル（アプリを動かすのに必要なもの）
 const urlsToCache = [
   './',
-  './wordrobe.html',
-  './manifest.json',
-  './images/wordrobe-icon.png',
 ];
 
 // 1. インストール時：ファイルをキャッシュに保存
